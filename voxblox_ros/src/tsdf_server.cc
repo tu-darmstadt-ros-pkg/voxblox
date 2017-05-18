@@ -280,7 +280,7 @@ bool TsdfServer::generateMeshCallback(
   timing::Timer publish_mesh_timer("mesh/publish");
   visualization_msgs::MarkerArray marker_array;
   marker_array.markers.resize(1);
-  fillMarkerWithMesh(mesh_layer_, color_mode_, &marker_array.markers[0]);
+  fillMarkerWithMesh(*mesh_layer_, color_mode_, &marker_array.markers[0]);
   marker_array.markers[0].header.frame_id = world_frame_;
   mesh_pub_.publish(marker_array);
   publish_mesh_timer.Stop();
@@ -330,7 +330,7 @@ void TsdfServer::updateMeshEvent(const ros::TimerEvent& event) {
   timing::Timer publish_mesh_timer("mesh/publish");
   visualization_msgs::MarkerArray marker_array;
   marker_array.markers.resize(1);
-  fillMarkerWithMesh(mesh_layer_, color_mode_, &marker_array.markers[0]);
+  fillMarkerWithMesh(*mesh_layer_, color_mode_, &marker_array.markers[0]);
   marker_array.markers[0].header.frame_id = world_frame_;
   mesh_pub_.publish(marker_array);
   publish_mesh_timer.Stop();

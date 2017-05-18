@@ -127,6 +127,7 @@ class MergeIntegrator {
       center = T_in_out * center;
 
       // furthest point that could possibly be inside a rotated input block
+      constexpr FloatingPoint kUnitCubeDiagonalLength = std::sqrt(3.0);
       FloatingPoint offset = kUnitCubeDiagonalLength * layer_in.block_size();
 
       // add index of all blocks in range to set
@@ -179,13 +180,7 @@ class MergeIntegrator {
       }
     }
   }
-
- private:
-  static const FloatingPoint kUnitCubeDiagonalLength;
-};
-
-const FloatingPoint MergeIntegrator::kUnitCubeDiagonalLength =
-    std::sqrt(3.0);
+};  
 
 template <>
 inline void MergeIntegrator::mergeVoxelAIntoVoxelB(const TsdfVoxel& voxel_A,

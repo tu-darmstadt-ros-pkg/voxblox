@@ -54,8 +54,12 @@ inline Point lambertShading(const Point& normal, const Point& light,
 
 inline void lambertColorFromNormal(const Point& normal,
                                    std_msgs::ColorRGBA* color_msg) {
-  const Point light_dir = Point(0.8f, -0.2f, 0.7f).normalized();
+/*  const Point light_dir = Point(0.8f, -0.2f, 0.7f).normalized();
   const Point light_dir2 = Point(-0.5f, 0.2f, 0.2f).normalized();
+*/  
+  // TODO(alex.millane): Hard coded hackery. Make a param.
+  const Point light_dir = Point(-0.7f, -0.2f, 0.8f).normalized();
+  const Point light_dir2 = Point(-0.2f, 0.2f, -0.5f).normalized();
   const Point ambient(0.2f, 0.2f, 0.2f);
   const Point color_pt(0.5, 0.5, 0.5);
 
@@ -107,7 +111,7 @@ inline void heightColorFromVertex(const Point& vertex,
   colorVoxbloxToMsg(rainbowColorMap(mapped_height), color_msg);
 }
 
-inline void fillMarkerWithMesh(const MeshLayer::ConstPtr& mesh_layer,
+inline void fillMarkerWithMesh(const MeshLayer& mesh_layer,
                                ColorMode color_mode,
                                visualization_msgs::Marker* marker) {
   CHECK_NOTNULL(marker);
@@ -123,10 +127,10 @@ inline void fillMarkerWithMesh(const MeshLayer::ConstPtr& mesh_layer,
   marker->type = visualization_msgs::Marker::TRIANGLE_LIST;
 
   BlockIndexList mesh_indices;
-  mesh_layer->getAllAllocatedMeshes(&mesh_indices);
+  mesh_layer.getAllAllocatedMeshes(&mesh_indices);
 
   for (const BlockIndex& block_index : mesh_indices) {
-    Mesh::ConstPtr mesh = mesh_layer->getMeshPtrByIndex(block_index);
+    Mesh::ConstPtr mesh = mesh_layer.getMeshPtrByIndex(block_index);
 
     if (!mesh->hasVertices()) {
       continue;

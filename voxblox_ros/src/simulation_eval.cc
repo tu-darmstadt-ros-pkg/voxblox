@@ -479,7 +479,7 @@ void SimulationServer::visualize() {
     visualization_msgs::MarkerArray marker_array;
     marker_array.markers.resize(1);
     ColorMode color_mode = ColorMode::kNormals;
-    fillMarkerWithMesh(mesh, color_mode, &marker_array.markers[0]);
+    fillMarkerWithMesh(*mesh, color_mode, &marker_array.markers[0]);
     marker_array.markers[0].header.frame_id = world_frame_;
     tsdf_gt_mesh_pub_.publish(marker_array);
 
@@ -490,7 +490,7 @@ void SimulationServer::visualize() {
     mesh_integrator_test.generateWholeMesh();
     marker_array.markers.clear();
     marker_array.markers.resize(1);
-    fillMarkerWithMesh(mesh_test, color_mode, &marker_array.markers[0]);
+    fillMarkerWithMesh(*mesh_test, color_mode, &marker_array.markers[0]);
     marker_array.markers[0].header.frame_id = world_frame_;
     tsdf_test_mesh_pub_.publish(marker_array);
   }
