@@ -31,26 +31,53 @@
 #include <voxblox/core/common.h>
 #include <voxblox/mesh/mesh.h>
 #include <voxblox/mesh/mesh_layer.h>
+#include <voxblox/integrator/tsdf_integrator.h>
+#include <voxblox/integrator/esdf_integrator.h>
 
 #include "voxblox_ros/conversions.h"
 
 namespace voxblox {
 
-enum ColorMode { kColor = 0, kHeight, kNormals, kGray, kLambert };
+enum ColorMode {
+  kColor = 0,
+  kHeight,
+  kNormals,
+  kGray,
+  kLambert,
+  kLambertColor
+};
 
-inline Point lambertShading(const Point& normal, const Point& light) {
-  return std::max<FloatingPoint>(normal.dot(light), 0.0f) *
-         Point(0.5, 0.5, 0.5);
+inline Point lambertShading(const Point& normal, const Point& light,
+                            const Point& color) {
+  return std::max<FloatingPoint>(normal.dot(light), 0.0f) * color;
 }
 
 inline void lambertColorFromNormal(const Point& normal,
-                            std_msgs::ColorRGBA* color_msg) {
-  static const Point light_dir = Point(0.8f, -0.2f, 0.7f).normalized();
-  static const Point light_dir2 = Point(-0.5f, 0.2f, 0.2f).normalized();
-  static const Point ambient(0.2f, 0.2f, 0.2f);
+                                   std_msgs::ColorRGBA* color_msg) {
+  const Point light_dir = Point(0.8f, -0.2f, 0.7f).normalized();
+  const Point light_dir2 = Point(-0.5f, 0.2f, 0.2f).normalized();
+  const Point ambient(0.2f, 0.2f, 0.2f);
+  const Point color_pt(0.5, 0.5, 0.5);
 
-  Point lambert = lambertShading(normal, light_dir) +
-                  lambertShading(normal, light_dir2) + ambient;
+  Point lambert = lambertShading(normal, light_dir, color_pt) +
+                  lambertShading(normal, light_dir2, color_pt) + ambient;
+
+  color_msg->r = std::min<FloatingPoint>(lambert.x(), 1.0);
+  color_msg->g = std::min<FloatingPoint>(lambert.y(), 1.0);
+  color_msg->b = std::min<FloatingPoint>(lambert.z(), 1.0);
+  color_msg->a = 1.0;
+}
+
+inline void lambertColorFromColorAndNormal(const Color& color,
+                                           const Point& normal,
+                                           std_msgs::ColorRGBA* color_msg) {
+  const Point light_dir = Point(0.8f, -0.2f, 0.7f).normalized();
+  const Point light_dir2 = Point(-0.5f, 0.2f, 0.2f).normalized();
+  const Point ambient(0.2f, 0.2f, 0.2f);
+  const Point color_pt(color.r/255.0, color.g/255.0, color.b/255.0);
+
+  Point lambert = lambertShading(normal, light_dir, color_pt) +
+                  lambertShading(normal, light_dir2, color_pt) + ambient;
 
   color_msg->r = std::min<FloatingPoint>(lambert.x(), 1.0);
   color_msg->g = std::min<FloatingPoint>(lambert.y(), 1.0);
@@ -59,7 +86,7 @@ inline void lambertColorFromNormal(const Point& normal,
 }
 
 inline void normalColorFromNormal(const Point& normal,
-                           std_msgs::ColorRGBA* color_msg) {
+                                  std_msgs::ColorRGBA* color_msg) {
   // Normals should be in the scale -1 to 1, so we need to shift them to
   // 0 -> 1 range.
   color_msg->r = normal.x() * 0.5 + 0.5;
@@ -69,7 +96,7 @@ inline void normalColorFromNormal(const Point& normal,
 }
 
 inline void heightColorFromVertex(const Point& vertex,
-                           std_msgs::ColorRGBA* color_msg) {
+                                  std_msgs::ColorRGBA* color_msg) {
   // TODO(helenol): figure out a nicer way to do this without hard-coded
   // constants.
   const double min_z = -1;
@@ -80,9 +107,9 @@ inline void heightColorFromVertex(const Point& vertex,
   colorVoxbloxToMsg(rainbowColorMap(mapped_height), color_msg);
 }
 
-inline void fillMarkerWithMesh(const MeshLayer& mesh_layer,
-                        ColorMode color_mode,
-                        visualization_msgs::Marker* marker) {
+inline void fillMarkerWithMesh(const MeshLayer::ConstPtr& mesh_layer,
+                               ColorMode color_mode,
+                               visualization_msgs::Marker* marker) {
   CHECK_NOTNULL(marker);
   marker->header.stamp = ros::Time::now();
   marker->ns = "mesh";
@@ -96,10 +123,10 @@ inline void fillMarkerWithMesh(const MeshLayer& mesh_layer,
   marker->type = visualization_msgs::Marker::TRIANGLE_LIST;
 
   BlockIndexList mesh_indices;
-  mesh_layer.getAllAllocatedMeshes(&mesh_indices);
+  mesh_layer->getAllAllocatedMeshes(&mesh_indices);
 
   for (const BlockIndex& block_index : mesh_indices) {
-    Mesh::ConstPtr mesh = mesh_layer.getMeshPtrByIndex(block_index);
+    Mesh::ConstPtr mesh = mesh_layer->getMeshPtrByIndex(block_index);
 
     if (!mesh->hasVertices()) {
       continue;
@@ -129,6 +156,10 @@ inline void fillMarkerWithMesh(const MeshLayer& mesh_layer,
           break;
         case kLambert:
           lambertColorFromNormal(mesh->normals[i], &color_msg);
+          break;
+        case kLambertColor:
+          lambertColorFromColorAndNormal(mesh->colors[i], mesh->normals[i],
+                                         &color_msg);
           break;
         case kGray:
           color_msg.r = color_msg.g = color_msg.b = 0.5;

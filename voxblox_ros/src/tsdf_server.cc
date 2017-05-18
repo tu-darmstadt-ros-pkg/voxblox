@@ -53,50 +53,50 @@ TsdfServer::TsdfServer(const ros::NodeHandle& nh,
   }
 
   // Determine map parameters.
-  config_ = TsdfMap::Config();
+  TsdfMap::Config config;
   // Workaround for OS X on mac mini not having specializations for float
   // for some reason.
-  double voxel_size = config_.tsdf_voxel_size;
-  int voxels_per_side = config_.tsdf_voxels_per_side;
+  double voxel_size = config.tsdf_voxel_size;
+  int voxels_per_side = config.tsdf_voxels_per_side;
   nh_private_.param("tsdf_voxel_size", voxel_size, voxel_size);
   nh_private_.param("tsdf_voxels_per_side", voxels_per_side, voxels_per_side);
-  config_.tsdf_voxel_size = static_cast<FloatingPoint>(voxel_size);
-  config_.tsdf_voxels_per_side = voxels_per_side;
-  tsdf_map_.reset(new TsdfMap(config_));
+  config.tsdf_voxel_size = static_cast<FloatingPoint>(voxel_size);
+  config.tsdf_voxels_per_side = voxels_per_side;
+  tsdf_map_.reset(new TsdfMap(config));
 
   // Determine integrator parameters.
-  integrator_config_ = TsdfIntegrator::Config();
-  integrator_config_.voxel_carving_enabled = true;
+  TsdfIntegrator::Config integrator_config;
+  integrator_config.voxel_carving_enabled = true;
   // Used to be * 4 according to Marius's experience, now * 2.
   // This should be made bigger again if behind-surface weighting is improved.
-  integrator_config_.default_truncation_distance = config_.tsdf_voxel_size * 2;
+  integrator_config.default_truncation_distance = config.tsdf_voxel_size * 2;
 
-  double truncation_distance = integrator_config_.default_truncation_distance;
-  double max_weight = integrator_config_.max_weight;
+  double truncation_distance = integrator_config.default_truncation_distance;
+  double max_weight = integrator_config.max_weight;
   nh_private_.param("voxel_carving_enabled",
-                    integrator_config_.voxel_carving_enabled,
-                    integrator_config_.voxel_carving_enabled);
+                    integrator_config.voxel_carving_enabled,
+                    integrator_config.voxel_carving_enabled);
   nh_private_.param("truncation_distance", truncation_distance,
                     truncation_distance);
-  nh_private_.param("max_ray_length_m", integrator_config_.max_ray_length_m,
-                    integrator_config_.max_ray_length_m);
-  nh_private_.param("min_ray_length_m", integrator_config_.min_ray_length_m,
-                    integrator_config_.min_ray_length_m);
+  nh_private_.param("max_ray_length_m", integrator_config.max_ray_length_m,
+                    integrator_config.max_ray_length_m);
+  nh_private_.param("min_ray_length_m", integrator_config.min_ray_length_m,
+                    integrator_config.min_ray_length_m);
   nh_private_.param("max_weight", max_weight, max_weight);
-  nh_private_.param("use_const_weight", integrator_config_.use_const_weight,
-                    integrator_config_.use_const_weight);
-  nh_private_.param("allow_clear", integrator_config_.allow_clear,
-                    integrator_config_.allow_clear);
-  integrator_config_.default_truncation_distance =
+  nh_private_.param("use_const_weight", integrator_config.use_const_weight,
+                    integrator_config.use_const_weight);
+  nh_private_.param("allow_clear", integrator_config.allow_clear,
+                    integrator_config.allow_clear);
+  integrator_config.default_truncation_distance =
       static_cast<float>(truncation_distance);
-  integrator_config_.max_weight = static_cast<float>(max_weight);
+  integrator_config.max_weight = static_cast<float>(max_weight);
 
   tsdf_integrator_.reset(
-      new TsdfIntegrator(integrator_config_, tsdf_map_->getTsdfLayerPtr()));
+      new TsdfIntegrator(integrator_config, tsdf_map_->getTsdfLayerPtr()));
 
   // Mesh settings.
   nh_private_.param("mesh_filename", mesh_filename_, mesh_filename_);
-  std::string color_mode("color");
+  std::string color_mode("colors");
   nh_private_.param("color_mode", color_mode, color_mode);
   if (color_mode == "color" || color_mode == "colors") {
     color_mode_ = ColorMode::kColor;
@@ -106,18 +106,20 @@ TsdfServer::TsdfServer(const ros::NodeHandle& nh,
     color_mode_ = ColorMode::kNormals;
   } else if (color_mode == "lambert") {
     color_mode_ = ColorMode::kLambert;
+  } else if (color_mode == "lambert_color") {
+    color_mode_ = ColorMode::kLambertColor;
   } else {  // Default case is gray.
     color_mode_ = ColorMode::kGray;
   }
 
-  mesh_config_ = MeshIntegrator::Config();
-  nh_private_.param("mesh_min_weight", mesh_config_.min_weight,
-                    mesh_config_.min_weight);
+  MeshIntegrator::Config mesh_config;
+  nh_private_.param("mesh_min_weight", mesh_config.min_weight,
+                    mesh_config.min_weight);
 
   mesh_layer_.reset(new MeshLayer(tsdf_map_->block_size()));
 
   mesh_integrator_.reset(new MeshIntegrator(
-      mesh_config_, tsdf_map_->getTsdfLayerPtr(), mesh_layer_.get()));
+      mesh_config, tsdf_map_->getTsdfLayerPtr(), mesh_layer_.get()));
 
   // Advertise services.
   generate_mesh_srv_ = nh_private_.advertiseService(
@@ -146,85 +148,79 @@ void TsdfServer::insertPointcloud(
     return;
   }
   last_msg_time_ = pointcloud_msg->header.stamp;
+
   // Look up transform from sensor frame to world frame.
-  Transformation T_M_C;
+  Transformation T_G_C;
   if (transformer_.lookupTransform(pointcloud_msg->header.frame_id,
                                    world_frame_, pointcloud_msg->header.stamp,
-                                   &T_M_C)) {
-    // Inserting the pointcloud using this transform
-    insertPointcloudWithTransform(pointcloud_msg, T_M_C);
-  }
-}
-
-void TsdfServer::insertPointcloudWithTransform(
-    const sensor_msgs::PointCloud2::ConstPtr& pointcloud_msg,
-    const Transformation& T_M_C) {
-  // Convert the PCL pointcloud into our awesome format.
-  // TODO(helenol): improve...
-  // Horrible hack fix to fix color parsing colors in PCL.
-  // TODO(alexmillane): Copying the entire message such that this hack
-  // will work while accepting a const pointer.
-  sensor_msgs::PointCloud2 pointcloud_msg_fix(*pointcloud_msg);
-  for (size_t d = 0; d < pointcloud_msg_fix.fields.size(); ++d) {
-    if (pointcloud_msg_fix.fields[d].name == std::string("rgb")) {
-      pointcloud_msg_fix.fields[d].datatype = sensor_msgs::PointField::FLOAT32;
+                                   &T_G_C)) {
+    // Convert the PCL pointcloud into our awesome format.
+    // TODO(helenol): improve...
+    // Horrible hack fix to fix color parsing colors in PCL.
+    for (size_t d = 0; d < pointcloud_msg->fields.size(); ++d) {
+      if (pointcloud_msg->fields[d].name == std::string("rgb")) {
+        pointcloud_msg->fields[d].datatype = sensor_msgs::PointField::FLOAT32;
+      }
     }
-  }
 
-  pcl::PointCloud<pcl::PointXYZRGB> pointcloud_pcl;
-  // pointcloud_pcl is modified below:
-  pcl::fromROSMsg(pointcloud_msg_fix, pointcloud_pcl);
+    pcl::PointCloud<pcl::PointXYZRGB> pointcloud_pcl;
+    // pointcloud_pcl is modified below:
+    pcl::fromROSMsg(*pointcloud_msg, pointcloud_pcl);
 
-  timing::Timer ptcloud_timer("ptcloud_preprocess");
+    timing::Timer ptcloud_timer("ptcloud_preprocess");
 
-  // Filter out NaNs. :|
-  std::vector<int> indices;
-  pcl::removeNaNFromPointCloud(pointcloud_pcl, pointcloud_pcl, indices);
+    // Filter out NaNs. :|
+    std::vector<int> indices;
+    pcl::removeNaNFromPointCloud(pointcloud_pcl, pointcloud_pcl, indices);
 
-  Pointcloud points_C;
-  Colors colors;
-  points_C.reserve(pointcloud_pcl.size());
-  colors.reserve(pointcloud_pcl.size());
-  for (size_t i = 0; i < pointcloud_pcl.points.size(); ++i) {
-    points_C.push_back(Point(pointcloud_pcl.points[i].x,
-                             pointcloud_pcl.points[i].y,
-                             pointcloud_pcl.points[i].z));
-    colors.push_back(
-        Color(pointcloud_pcl.points[i].r, pointcloud_pcl.points[i].g,
-              pointcloud_pcl.points[i].b, pointcloud_pcl.points[i].a));
-  }
+    Pointcloud points_C;
+    Colors colors;
+    points_C.reserve(pointcloud_pcl.size());
+    colors.reserve(pointcloud_pcl.size());
+    for (size_t i = 0; i < pointcloud_pcl.points.size(); ++i) {
+      points_C.push_back(Point(pointcloud_pcl.points[i].x,
+                               pointcloud_pcl.points[i].y,
+                               pointcloud_pcl.points[i].z));
+      colors.push_back(
+          Color(pointcloud_pcl.points[i].r, pointcloud_pcl.points[i].g,
+                pointcloud_pcl.points[i].b, pointcloud_pcl.points[i].a));
+    }
 
-  ptcloud_timer.Stop();
+    ptcloud_timer.Stop();
 
-  if (verbose_) {
-    ROS_INFO("Integrating a pointcloud with %lu points.", points_C.size());
-  }
-  ros::WallTime start = ros::WallTime::now();
-  if (method_ == Method::kMerged) {
-    bool discard = false;
-    tsdf_integrator_->integratePointCloudMerged(T_M_C, points_C, colors,
-                                                discard);
-  } else if (method_ == Method::kMergedDiscard) {
-    bool discard = true;
-    tsdf_integrator_->integratePointCloudMerged(T_M_C, points_C, colors,
-                                                discard);
-  } else {
-    tsdf_integrator_->integratePointCloud(T_M_C, points_C, colors);
-  }
-  ros::WallTime end = ros::WallTime::now();
-  if (verbose_) {
-    ROS_INFO("Finished integrating in %f seconds, have %lu blocks.",
-             (end - start).toSec(),
-             tsdf_map_->getTsdfLayer().getNumberOfAllocatedBlocks());
-  }
+    if (verbose_) {
+      ROS_INFO("Integrating a pointcloud with %lu points.", points_C.size());
+    }
+    ros::WallTime start = ros::WallTime::now();
+    if (method_ == Method::kMerged) {
+      bool discard = false;
+      tsdf_integrator_->integratePointCloudMerged(T_G_C, points_C, colors,
+                                                  discard);
+    } else if (method_ == Method::kMergedDiscard) {
+      bool discard = true;
+      tsdf_integrator_->integratePointCloudMerged(T_G_C, points_C, colors,
+                                                  discard);
+    } else {
+      tsdf_integrator_->integratePointCloud(T_G_C, points_C, colors);
+    }
+    ros::WallTime end = ros::WallTime::now();
+    if (verbose_) {
+      ROS_INFO("Finished integrating in %f seconds, have %lu blocks.",
+               (end - start).toSec(),
+               tsdf_map_->getTsdfLayer().getNumberOfAllocatedBlocks());
+    }
 
-  publishAllUpdatedTsdfVoxels();
-  publishTsdfSurfacePoints();
-  publishTsdfOccupiedNodes();
-  publishSlices();
+    publishAllUpdatedTsdfVoxels();
+    publishTsdfSurfacePoints();
+    publishTsdfOccupiedNodes();
+    publishSlices();
 
-  if (verbose_) {
-    ROS_INFO_STREAM("Timings: " << std::endl << timing::Timing::Print());
+    // Callback for inheriting classes.
+    newPoseCallback(T_G_C);
+
+    if (verbose_) {
+      ROS_INFO_STREAM("Timings: " << std::endl << timing::Timing::Print());
+    }
   }
 }
 
@@ -284,7 +280,7 @@ bool TsdfServer::generateMeshCallback(
   timing::Timer publish_mesh_timer("mesh/publish");
   visualization_msgs::MarkerArray marker_array;
   marker_array.markers.resize(1);
-  fillMarkerWithMesh(*mesh_layer_, color_mode_, &marker_array.markers[0]);
+  fillMarkerWithMesh(mesh_layer_, color_mode_, &marker_array.markers[0]);
   marker_array.markers[0].header.frame_id = world_frame_;
   mesh_pub_.publish(marker_array);
   publish_mesh_timer.Stop();
@@ -334,7 +330,7 @@ void TsdfServer::updateMeshEvent(const ros::TimerEvent& event) {
   timing::Timer publish_mesh_timer("mesh/publish");
   visualization_msgs::MarkerArray marker_array;
   marker_array.markers.resize(1);
-  fillMarkerWithMesh(*mesh_layer_, color_mode_, &marker_array.markers[0]);
+  fillMarkerWithMesh(mesh_layer_, color_mode_, &marker_array.markers[0]);
   marker_array.markers[0].header.frame_id = world_frame_;
   mesh_pub_.publish(marker_array);
   publish_mesh_timer.Stop();

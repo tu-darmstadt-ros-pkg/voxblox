@@ -234,7 +234,8 @@ void VoxbloxEvaluator::visualize() {
   // Publish mesh.
   visualization_msgs::MarkerArray marker_array;
   marker_array.markers.resize(1);
-  fillMarkerWithMesh(*mesh_layer_, color_mode_, &marker_array.markers[0]);
+  marker_array.markers[0].header.frame_id = frame_id_;
+  fillMarkerWithMesh(mesh_layer_, color_mode_, &marker_array.markers[0]);
   mesh_pub_.publish(marker_array);
 
   gt_ptcloud_.header.frame_id = frame_id_;
