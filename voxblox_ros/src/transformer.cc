@@ -82,7 +82,6 @@ bool Transformer::lookupTransformTf(const std::string& from_frame,
                                     Transformation* transform) {
   CHECK_NOTNULL(transform);
   tf::StampedTransform tf_transform;
-  ros::Time time_to_lookup = timestamp;
 
   // Allow overwriting the TF frame for the sensor.
   std::string from_frame_modified = from_frame;
@@ -90,18 +89,15 @@ bool Transformer::lookupTransformTf(const std::string& from_frame,
     from_frame_modified = sensor_frame_;
   }
 
-  // If this transform isn't possible at the time, then try to just look up
-  // the latest (this is to work with bag files and static transform
-  // publisher, etc).
-  if (!tf_listener_.canTransform(to_frame, from_frame_modified,
-                                 time_to_lookup)) {
-    time_to_lookup = ros::Time(0);
-    ROS_WARN_STREAM_THROTTLE(60, "To: '" << to_frame << "', From: '" << from_frame <<
-                      "'. Using latest TF transform instead of timestamp match. This message is throttled.");
+  if (!tf_listener_.waitForTransform(to_frame, from_frame_modified,
+                                     timestamp, ros::Duration(0.3))) {
+    ROS_WARN_STREAM_THROTTLE(60, "Timed out waiting for transform from: '" << from_frame << " to: '" << to_frame
+                             <<  ". This message is throttled.");
+    return false;
   }
 
   try {
-    tf_listener_.lookupTransform(to_frame, from_frame_modified, time_to_lookup,
+    tf_listener_.lookupTransform(to_frame, from_frame_modified, timestamp,
                                  tf_transform);
   } catch (tf::TransformException& ex) {  // NOLINT
     ROS_ERROR_STREAM(
