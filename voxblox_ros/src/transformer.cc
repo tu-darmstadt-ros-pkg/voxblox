@@ -96,7 +96,8 @@ bool Transformer::lookupTransformTf(const std::string& from_frame,
   if (!tf_listener_.canTransform(to_frame, from_frame_modified,
                                  time_to_lookup)) {
     time_to_lookup = ros::Time(0);
-    ROS_WARN("Using latest TF transform instead of timestamp match.");
+    ROS_WARN_STREAM_THROTTLE(60, "To: '" << to_frame << "', From: '" << from_frame <<
+                      "'. Using latest TF transform instead of timestamp match. This message is throttled.");
   }
 
   try {

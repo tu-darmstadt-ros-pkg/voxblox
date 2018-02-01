@@ -19,6 +19,7 @@
 #include <voxblox/io/mesh_ply.h>
 #include <voxblox/mesh/mesh_integrator.h>
 #include <voxblox_msgs/Mesh.h>
+#include <voxblox_msgs/GetLayer.h>
 
 #include <voxblox_msgs/FilePath.h>
 #include "voxblox_ros/mesh_vis.h"
@@ -77,6 +78,9 @@ class TsdfServer {
   bool publishTsdfMapCallback(
           std_srvs::Empty::Request& request,     // NOLINT
           std_srvs::Empty::Response& response);  // NOLINT
+  bool getTsdfMapCallback(
+      voxblox_msgs::GetLayer::Request& request,
+      voxblox_msgs::GetLayer::Response& response);
 
   void updateMeshEvent(const ros::TimerEvent& event);
 
@@ -148,6 +152,7 @@ class TsdfServer {
   ros::ServiceServer load_map_srv_;
   ros::ServiceServer publish_pointclouds_srv_;
   ros::ServiceServer publish_tsdf_map_srv_;
+  ros::ServiceServer get_tsdf_map_srv_;
 
   // Timers.
   ros::Timer update_mesh_timer_;
