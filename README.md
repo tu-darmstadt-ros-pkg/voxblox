@@ -14,6 +14,7 @@ Voxblox is a volumetric mapping library based mainly on Truncated Signed Distanc
 # Table of Contents
 * [Paper and Video](README.md#paper-and-video)
 * [Credits](README.md#credits)
+* [Example Outputs](README.md#example-outputs)
 * [Performance](README.md#performance)
 * [Installation](README.md#installation)
 * [Running Voxblox](README.md#running-voxblox)
@@ -23,6 +24,7 @@ Voxblox is a volumetric mapping library based mainly on Truncated Signed Distanc
   * [Parameters](README.md#parameters)
 * [Modifying Voxblox](README.md#modifying-voxblox)
   * [Serialization](README.md#serialization)
+* [Transformations in Voxblox](README.md#transformations-in-voxblox)
 
 # Paper and Video
 A video showing sample output from voxblox can be seen [here](https://www.youtube.com/watch?v=PlqT5zNsvwM).
@@ -44,12 +46,33 @@ Helen Oleynikova, Zachary Taylor, Marius Fehr, Juan Nieto, and Roland Siegwart, 
 # Credits
 This library was written primarily by Helen Oleynikova and Marius Fehr, with significant contributions from Zachary Taylor, Alexander Millane, and others. The marching cubes meshing and ROS mesh generation were taken or heavily derived from [open_chisel](https://github.com/personalrobotics/OpenChisel). We've retained the copyright headers for the relevant files.
 
-# Performance
-The Voxblox code has prioritized readability and easy extension over performance. It was also designed to operate on systems that lack a GPU. One of the main drives to create Voxblox was to create a volumetric mapping library that fit the needs of planning for robots, because of this, and unlike many TSDF libraries all possible freespace is mapped in addition to areas close to surfaces. These design decisions limit performance, however high quality real-time mapping of large enviroments is still easily acheivable. 
+# Example Outputs
+A mesh produced by Voxblox running inside a manifold mapper that fuses a SLAM systems poses with the output of a realsense D415 depthcamera. The map was generated while all systems were running fully onboard the pictured micro aerial vehicle. 
+![manifold_mapping](https://i.imgur.com/t5DHpJh.png)
 
-An example of the system integrating a TSDF, generating a mesh and publishing the result to RViz in real time is shown below. A table of the performance on the cow and lady dataset on a i7-4810MQ 2.80GHz CPU is also shown.
-
+Voxblox running on the cow and lady dataset on a laptop equiped with an i7-4810MQ 2.80GHz CPU. In this example the system is integrating a TSDF, generating a mesh and publishing the result to RViz in real time.
 ![example_gif](http://i.imgur.com/2wLztFm.gif)
+
+Voxblox running fully onboard the Atom processor of an Intel-Euclid. Again, the system is integrating, meshing and publishing in realtime. In this example the system was also sharing the CPU with the localization system (ROVIO) and the sensor drivers. This left around one CPU core for Voxblox to use.
+<p align="center"> 
+<img src="https://i.imgur.com/98nAed3.gif">
+</p>
+
+A mesh produced from Voxblox when run on the KITTI dataset on a Desktop PC. The given localization solution and the pointcloud produced by the Velodyne were used.
+![velodyne_kitti](https://i.imgur.com/jAgLrZk.jpg)
+
+A voxblox mesh produced by the Maplab library running on the Stereo data provided by the EuRoC dataset. 
+<p align="center"> 
+<img src="https://raw.githubusercontent.com/wiki/ethz-asl/maplab/readme_images/stereo.png">
+</p>
+
+A map of a beach produced by a platform with two sets of stereo cameras flying an automated coverage path.
+<p align="center"> 
+<img src="https://i.imgur.com/uiE7WAx.gif">
+</p>
+
+# Performance
+The Voxblox code has prioritized readability and easy extension over performance. It was also designed to operate on systems that lack a GPU. One of the main drives to create Voxblox was to create a volumetric mapping library that fit the needs of planning for robots, because of this, and unlike many TSDF libraries all possible freespace is mapped in addition to areas close to surfaces. These design decisions limit performance, however high quality real-time mapping of large enviroments is still easily acheivable. A table of the performance on the cow and lady dataset on a i7-4810MQ 2.80GHz CPU is also shown.
 
 <center>
 
@@ -150,6 +173,7 @@ The voxblox_node publishes and subscribes to the following topics:
 - Subscribed topics:
   - **`transform`** of type `geometry_msgs::TransformStamped`. Only appears if `use_tf_transforms` is false. The transformation from the world frame to the current sensor frame.
   - **`pointcloud`** of type `sensor_msgs::PointCloud2`. The input pointcloud to be integrated.
+  - **`freespace_pointcloud`** of type `sensor_msgs::PointCLoud2`. Only appears if `use_freespace_pointcloud` is true. Unlike the `pointcloud` topic where the given points lie on surfaces, the points in the `freespace_pointcloud` are taken to be floating in empty space. These points can assist in generating more complete freespace information in a map.
 
 ## Services
 
@@ -191,6 +215,7 @@ The most important parameter here is the selection of the method:
 | `max_weight` | The upper limit for the weight assigned to a voxel | 10000.0 |
 | `use_const_weight` | If true all points along a ray have equal weighting | false |
 | `allow_clear` | If true points beyond the `max_ray_length_m` will be integrated up to this distance | true |
+| `use_freespace_pointcloud` | If true a second subscription topic `freespace_pointcloud` appears. Clearing rays are cast from beyond this topic's points' truncation distance to assist in clearing freespace voxels | false | 
 
 ### Fast TSDF Integrator Specific Parameters
 These parameters are only used if the integrator `method` is set to "fast".
@@ -293,3 +318,8 @@ void Block<YOUR_FANCY_VOXEL>::SerializeVoxelData(const YOUR_FANCY_VOXEL* voxels,
   **Have a look at the example package:**
 
   TODO(mfehr, helenol): add example package with a new voxel type
+  
+# Transformations in Voxblox
+  
+Voxblox uses active transforms and Hamilton quaternions. For futher details on the notation used throughout the code see [the minkindr wiki](https://github.com/ethz-asl/minkindr/wiki/Common-Transformation-Conventions)
+  
