@@ -50,20 +50,18 @@ class Layer {
 
   inline const BlockType& getBlockByIndex(const BlockIndex& index) const {
     typename BlockHashMap::const_iterator it = block_map_.find(index);
-    if (it != block_map_.end()) {
-      return *(it->second);
-    } else {
+    if (it == block_map_.end()) {
       LOG(FATAL) << "Accessed unallocated block at " << index.transpose();
     }
+    return *(it->second);
   }
 
   inline BlockType& getBlockByIndex(const BlockIndex& index) {
     typename BlockHashMap::iterator it = block_map_.find(index);
-    if (it != block_map_.end()) {
-      return *(it->second);
-    } else {
+    if (it == block_map_.end()) {
       LOG(FATAL) << "Accessed unallocated block at " << index.transpose();
     }
+    return *(it->second);
   }
 
   inline typename BlockType::ConstPtr getBlockPtrByIndex(
@@ -127,8 +125,8 @@ class Layer {
                    voxels_per_side_, voxel_size_,
                    getOriginPointFromGridIndex(index, block_size_)));
 
-    DCHECK(insert_status.second) << "Block already exists when allocating at "
-                                 << index.transpose();
+    DCHECK(insert_status.second)
+        << "Block already exists when allocating at " << index.transpose();
 
     DCHECK(insert_status.first->second);
     DCHECK_EQ(insert_status.first->first, index);
@@ -156,6 +154,21 @@ class Layer {
 
   void removeBlockByCoordinates(const Point& coords) {
     block_map_.erase(computeBlockIndexFromCoordinates(coords));
+  }
+
+  void removeDistantBlocks(const Point& center,
+                           const double max_distance) {
+    AlignedVector<BlockIndex> needs_erasing;
+    for (const std::pair<const BlockIndex, typename BlockType::Ptr>& kv :
+         block_map_) {
+      if ((kv.second->origin() - center).squaredNorm() >
+          max_distance * max_distance) {
+        needs_erasing.push_back(kv.first);
+      }
+    }
+    for (const BlockIndex& index : needs_erasing) {
+      block_map_.erase(index);
+    }
   }
 
   void getAllAllocatedBlocks(BlockIndexList* blocks) const {

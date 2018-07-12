@@ -18,6 +18,9 @@ void TsdfServer::getServerConfigFromRosParam(
                    min_time_between_msgs_sec);
   min_time_between_msgs_.fromSec(min_time_between_msgs_sec);
 
+  nh_private.param("max_block_distance_from_body",
+                   max_block_distance_from_body_,
+                   max_block_distance_from_body_);
   nh_private.param("slice_level", slice_level_, slice_level_);
   nh_private.param("world_frame", world_frame_, world_frame_);
   nh_private.param("publish_tsdf_info", publish_tsdf_info_, publish_tsdf_info_);
@@ -58,6 +61,7 @@ TsdfServer::TsdfServer(const ros::NodeHandle& nh,
       nh_private_(nh_private),
       verbose_(true),
       world_frame_("world"),
+      max_block_distance_from_body_(std::numeric_limits<FloatingPoint>::max()),
       slice_level_(0.5),
       use_freespace_pointcloud_(false),
       publish_tsdf_info_(false),
@@ -124,7 +128,7 @@ TsdfServer::TsdfServer(const ros::NodeHandle& nh,
         integrator_config, tsdf_map_->getTsdfLayerPtr()));
   }
 
-  MeshIntegrator<TsdfVoxel>::Config mesh_config;
+  MeshIntegratorConfig mesh_config;
   nh_private_.param("mesh_min_weight", mesh_config.min_weight,
                     mesh_config.min_weight);
 
@@ -136,6 +140,8 @@ TsdfServer::TsdfServer(const ros::NodeHandle& nh,
   // Advertise services.
   generate_mesh_srv_ = nh_private_.advertiseService(
       "generate_mesh", &TsdfServer::generateMeshCallback, this);
+  clear_map_srv_ = nh_private_.advertiseService(
+      "clear_map", &TsdfServer::clearMapCallback, this);
   save_map_srv_ = nh_private_.advertiseService(
       "save_map", &TsdfServer::saveMapCallback, this);
   load_map_srv_ = nh_private_.advertiseService(
@@ -213,6 +219,13 @@ void TsdfServer::processPointCloudMessageAndInsert(
                (end - start).toSec(),
                tsdf_map_->getTsdfLayer().getNumberOfAllocatedBlocks());
     }
+
+    timing::Timer block_remove_timer("remove_distant_blocks");
+    tsdf_map_->getTsdfLayerPtr()->removeDistantBlocks(
+        T_G_C.getPosition(), max_block_distance_from_body_);
+    mesh_layer_->clearDistantMesh(T_G_C.getPosition(),
+                                 max_block_distance_from_body_);
+    block_remove_timer.Stop();
 
     // Callback for inheriting classes.
     newPoseCallback(T_G_C);
@@ -308,13 +321,16 @@ void TsdfServer::publishSlices() {
   tsdf_slice_pub_.publish(pointcloud);
 }
 
-void TsdfServer::publishMap() {
+void TsdfServer::publishMap(const bool reset_remote_map) {
   if (this->tsdf_map_pub_.getNumSubscribers() > 0) {
     const bool only_updated = false;
     timing::Timer publish_map_timer("map/publish_tsdf");
     voxblox_msgs::Layer layer_msg;
     serializeLayerAsMsg<TsdfVoxel>(this->tsdf_map_->getTsdfLayer(),
                                    only_updated, &layer_msg);
+    if (reset_remote_map) {
+      layer_msg.action = static_cast<uint8_t>(MapDerializationAction::kReset);
+    }
     this->tsdf_map_pub_.publish(layer_msg);
     publish_map_timer.Stop();
   }
@@ -407,6 +423,13 @@ bool TsdfServer::loadMap(const std::string& file_path) {
       kMulitpleLayerSupport, tsdf_map_->getTsdfLayerPtr());
 }
 
+bool TsdfServer::clearMapCallback(
+    std_srvs::Empty::Request& /*request*/,
+    std_srvs::Empty::Response& /*response*/) {  // NOLINT
+  clear();
+  return true;
+}
+
 bool TsdfServer::generateMeshCallback(
     std_srvs::Empty::Request& /*request*/,
     std_srvs::Empty::Response& /*response*/) {  // NOLINT
@@ -459,6 +482,10 @@ void TsdfServer::updateMeshEvent(const ros::TimerEvent& /*event*/) {
 void TsdfServer::clear() {
   tsdf_map_->getTsdfLayerPtr()->removeAllBlocks();
   mesh_layer_->clear();
+
+  // Publish a message to reset the map to all subscribers.
+  constexpr bool kResetRemoteMap = true;
+  publishMap(kResetRemoteMap);
 }
 
 void TsdfServer::tsdfMapCallback(const voxblox_msgs::Layer& layer_msg) {

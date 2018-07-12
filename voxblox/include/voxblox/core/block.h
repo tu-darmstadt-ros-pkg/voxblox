@@ -53,7 +53,11 @@ class Block {
     return linear_index;
   }
 
-  inline VoxelIndex computeVoxelIndexFromCoordinates(
+  // NOTE: This function is dangerous, it will truncate the voxel index to an
+  // index that is within this block if you pass a coordinate outside the range
+  // of this block. Try not to use this function if there is an alternative to
+  // directly address the voxels via precise integer indexing math.
+  inline VoxelIndex computeTruncatedVoxelIndexFromCoordinates(
       const Point& coords) const {
     const IndexElement max_value = voxels_per_side_ - 1;
     VoxelIndex voxel_index =
@@ -65,9 +69,25 @@ class Block {
                       std::max(std::min(voxel_index.z(), max_value), 0));
   }
 
+  // NOTE: This function is also dangerous, use in combination with
+  // Block::isValidVoxelIndex function.
+  // This function doesn't truncate the voxel index to the [0, voxels_per_side]
+  // range when the coordinate is outside the range of this block, unlike the
+  // function above.
+  inline VoxelIndex computeVoxelIndexFromCoordinates(
+      const Point& coords) const {
+    VoxelIndex voxel_index =
+        getGridIndexFromPoint(coords - origin_, voxel_size_inv_);
+    return voxel_index;
+  }
+
+  // NOTE: This function is dangerous, it will truncate the voxel index to an
+  // index that is within this block if you pass a coordinate outside the range
+  // of this block. Try not to use this function if there is an alternative to
+  // directly address the voxels via precise integer indexing math.
   inline size_t computeLinearIndexFromCoordinates(const Point& coords) const {
     return computeLinearIndexFromVoxelIndex(
-        computeVoxelIndexFromCoordinates(coords));
+        computeTruncatedVoxelIndexFromCoordinates(coords));
   }
 
   // Returns CENTER point of voxel.
@@ -103,8 +123,21 @@ class Block {
     return voxels_[computeLinearIndexFromVoxelIndex(index)];
   }
 
+  // NOTE: The following three functions are dangerous, they will truncate the
+  // voxel index to an index that is within this block if you pass a coordinate
+  // outside the range of this block. Try not to use this function if there is
+  // an alternative to directly address the voxels via precise integer indexing
+  // math.
   inline const VoxelType& getVoxelByCoordinates(const Point& coords) const {
     return voxels_[computeLinearIndexFromCoordinates(coords)];
+  }
+
+  inline VoxelType& getVoxelByCoordinates(const Point& coords) {
+    return voxels_[computeLinearIndexFromCoordinates(coords)];
+  }
+
+  inline VoxelType* getVoxelPtrByCoordinates(const Point& coords) {
+    return &voxels_[computeLinearIndexFromCoordinates(coords)];
   }
 
   inline VoxelType& getVoxelByLinearIndex(size_t index) {
@@ -114,14 +147,6 @@ class Block {
 
   inline VoxelType& getVoxelByVoxelIndex(const VoxelIndex& index) {
     return voxels_[computeLinearIndexFromVoxelIndex(index)];
-  }
-
-  inline VoxelType& getVoxelByCoordinates(const Point& coords) {
-    return voxels_[computeLinearIndexFromCoordinates(coords)];
-  }
-
-  inline VoxelType* getVoxelPtrByCoordinates(const Point& coords) {
-    return &voxels_[computeLinearIndexFromCoordinates(coords)];
   }
 
   inline bool isValidVoxelIndex(const VoxelIndex& index) const {
@@ -157,6 +182,7 @@ class Block {
   FloatingPoint voxel_size_inv() const { return voxel_size_inv_; }
   size_t num_voxels() const { return num_voxels_; }
   Point origin() const { return origin_; }
+  void setOrigin(const Point& new_origin) { origin_ = new_origin; }
   FloatingPoint block_size() const { return block_size_; }
 
   bool has_data() const { return has_data_; }
@@ -173,7 +199,7 @@ class Block {
   void serializeToIntegers(std::vector<uint32_t>* data) const;
   void deserializeFromIntegers(const std::vector<uint32_t>& data);
 
-  bool mergeBlock(const Block<VoxelType>& other_block);
+  void mergeBlock(const Block<VoxelType>& other_block);
 
   size_t getMemorySize() const;
 
@@ -193,7 +219,7 @@ class Block {
   // Base parameters.
   const size_t voxels_per_side_;
   const FloatingPoint voxel_size_;
-  const Point origin_;
+  Point origin_;
 
   // Derived, cached parameters.
   FloatingPoint voxel_size_inv_;

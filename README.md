@@ -47,27 +47,30 @@ Helen Oleynikova, Zachary Taylor, Marius Fehr, Juan Nieto, and Roland Siegwart, 
 This library was written primarily by Helen Oleynikova and Marius Fehr, with significant contributions from Zachary Taylor, Alexander Millane, and others. The marching cubes meshing and ROS mesh generation were taken or heavily derived from [open_chisel](https://github.com/personalrobotics/OpenChisel). We've retained the copyright headers for the relevant files.
 
 # Example Outputs
-A mesh produced by Voxblox running inside a manifold mapper that fuses a SLAM systems poses with the output of a realsense D415 depthcamera. The map was generated while all systems were running fully onboard the pictured micro aerial vehicle. 
+A mesh produced by Voxblox running inside a manifold mapper that fuses a SLAM systems poses with the output of a realsense D415 depthcamera. The map was generated while all systems were running fully onboard the pictured micro aerial vehicle.
 ![manifold_mapping](https://i.imgur.com/t5DHpJh.png)
+
+A higher resolution mesh of the same area that was processed by voxblox offline is shown below.
+![offline_manifold](https://i.imgur.com/pvHhVsL.png)
 
 Voxblox running on the cow and lady dataset on a laptop equiped with an i7-4810MQ 2.80GHz CPU. In this example the system is integrating a TSDF, generating a mesh and publishing the result to RViz in real time.
 ![example_gif](http://i.imgur.com/2wLztFm.gif)
 
 Voxblox running fully onboard the Atom processor of an Intel-Euclid. Again, the system is integrating, meshing and publishing in realtime. In this example the system was also sharing the CPU with the localization system (ROVIO) and the sensor drivers. This left around one CPU core for Voxblox to use.
-<p align="center"> 
+<p align="center">
 <img src="https://i.imgur.com/98nAed3.gif">
 </p>
 
 A mesh produced from Voxblox when run on the KITTI dataset on a Desktop PC. The given localization solution and the pointcloud produced by the Velodyne were used.
 ![velodyne_kitti](https://i.imgur.com/jAgLrZk.jpg)
 
-A voxblox mesh produced by the Maplab library running on the Stereo data provided by the EuRoC dataset. 
-<p align="center"> 
+A voxblox mesh produced by the Maplab library running on the Stereo data provided by the EuRoC dataset.
+<p align="center">
 <img src="https://raw.githubusercontent.com/wiki/ethz-asl/maplab/readme_images/stereo.png">
 </p>
 
 A map of a beach produced by a platform with two sets of stereo cameras flying an automated coverage path.
-<p align="center"> 
+<p align="center">
 <img src="https://i.imgur.com/uiE7WAx.gif">
 </p>
 
@@ -77,7 +80,7 @@ The Voxblox code has prioritized readability and easy extension over performance
 <center>
 
 Rendered Mesh | Setup
---- | --- 
+--- | ---
 <img src="http://i.imgur.com/NYykPND.jpg" width="500"> | <table><tr><td>Integrator:</td><td>Merged</td></tr><tr><td>Voxel:</td><td>20 cm</td></tr><tr><td>TSDF:</td><td>56 ms / scan</td></tr><tr><td>Meshing:</td><td>2 ms / scan</td></tr><tr><td>Total RAM:</td><td>49 MB</td></tr></table>
 <img src="http://i.imgur.com/tHmGk8h.jpg" width="500"> | <table><tr><td>Integrator:</td><td>Fast</td></tr><tr><td>Voxel:</td><td>20 cm</td></tr><tr><td>TSDF:</td><td>20 ms / scan</td></tr><tr><td>Meshing:</td><td>2 ms / scan</td></tr><tr><td>Total RAM:</td><td>62 MB</td></tr></table>
 <img src="http://i.imgur.com/9KNmnum.jpg" width="500"> | <table><tr><td>Integrator:</td><td>Merged</td></tr><tr><td>Voxel:</td><td>5 cm</td></tr><tr><td>TSDF:</td><td>112 ms / scan</td></tr><tr><td>Meshing:</td><td>10 ms / scan</td></tr><tr><td>Total RAM:</td><td>144.2 MB</td></tr></table>
@@ -89,20 +92,20 @@ Rendered Mesh | Setup
 
 # Installation
 To install voxblox, please install [ROS Indigo](http://wiki.ros.org/indigo/Installation/Ubuntu) or [ROS Kinetic](http://wiki.ros.org/kinetic/Installation/Ubuntu).
-These instructions are for Ubuntu, but Voxblox will also run on OS X but you're more or less on your own there.
+These instructions are for Ubuntu, Voxblox will also run on OS X, but you're more or less on your own there.
 
-Then install additional system dependencies (swap indigo for kinetic as necessary):
+First install additional system dependencies (swap kinetic for indigo as necessary):
 ```
-sudo apt-get install python-wstool python-catkin-tools ros-indigo-cmake-modules protobuf-compiler
+sudo apt-get install python-wstool python-catkin-tools ros-kinetic-cmake-modules protobuf-compiler autoconf
 ```
 
-Finally, add a few other dependencies.
+Next, add a few other dependencies.
 If you don't have a catkin workspace yet, set it up as follows:
 ```
 mkdir -p ~/catkin_ws/src
 cd ~/catkin_ws
 catkin init
-catkin config --extend /opt/ros/indigo
+catkin config --extend /opt/ros/kinetic
 catkin config --cmake-args -DCMAKE_BUILD_TYPE=Release
 catkin config --merge-devel
 ```
@@ -110,31 +113,23 @@ catkin config --merge-devel
 If using [**SSH keys for github**](https://help.github.com/articles/connecting-to-github-with-ssh/) (recommended):
 ```
 cd ~/catkin_ws/src/
-wstool init
-wstool set catkin_simple   --git git@github.com:catkin/catkin_simple.git
-wstool set eigen_catkin    --git git@github.com:ethz-asl/eigen_catkin.git
-wstool set eigen_checks    --git git@github.com:ethz-asl/eigen_checks.git
-wstool set gflags_catkin   --git git@github.com:ethz-asl/gflags_catkin.git
-wstool set glog_catkin     --git git@github.com:ethz-asl/glog_catkin.git
-wstool set minkindr        --git git@github.com:ethz-asl/minkindr.git
-wstool set minkindr_ros    --git git@github.com:ethz-asl/minkindr_ros.git
-wstool set voxblox         --git git@github.com:ethz-asl/voxblox.git
+wstool init . ./voxblox/voxblox_ssh.rosinstall
 wstool update
 ```
 
 If **not using SSH** keys but using https instead:
 ```
 cd ~/catkin_ws/src/
-wstool init
-wstool set catkin_simple   --git https://github.com/catkin/catkin_simple.git
-wstool set eigen_catkin    --git https://github.com/ethz-asl/eigen_catkin.git
-wstool set eigen_checks    --git https://github.com/ethz-asl/eigen_checks.git
-wstool set gflags_catkin   --git https://github.com/ethz-asl/gflags_catkin.git
-wstool set glog_catkin     --git https://github.com/ethz-asl/glog_catkin.git
-wstool set minkindr        --git https://github.com/ethz-asl/minkindr.git
-wstool set minkindr_ros    --git https://github.com/ethz-asl/minkindr_ros.git
-wstool set voxblox         --git https://github.com/ethz-asl/voxblox.git
+wstool init . ./voxblox/voxblox_https.rosinstall
 wstool update
+```
+
+If you have already initalized wstool replace the above `wstool init` with `wstool merge -t`
+
+Compile:
+```
+cd ~/catkin_ws/src/
+catkin build voxblox_ros
 ```
 
 # Running Voxblox
@@ -149,15 +144,16 @@ The easiest way to start is to download the [cow and lady dataset](http://projec
 If you open rviz, you should be able to see the the mesh visualized on the `/voxblox_node/mesh` MarkerArray topic, in the `world` static frame, as shown below.
 The mesh only updates once per second (this is a setting in the launch file).
 
-![cow_and_lady_rviz](https://cloud.githubusercontent.com/assets/5616392/25223468/bbd6b3cc-25bb-11e7-8c06-61baa87655ca.png)
+![cow_and_lady_rviz](https://i.imgur.com/nSX5Qsh.jpg)
 
 The rest of the commonly-used settings are parameters in the launch file.
 
-# Voxblox Node
+# Voxblox Node (TSDF Server, ESDF Server)
 
 ## Published and Subscribed Topics
 
-The voxblox_node publishes and subscribes to the following topics:
+Note: the voxblox_node has been replaced with tsdf_server (if you want a TSDF) or esdf_server (if you want both a TSDF and an ESDF).
+The tsdf_server and esdf_server publish and subscribe to the following topics:
 
 - Published topics:
   - **`mesh`** of type `visualization_msgs::MarkerArray`. A visualization topic showing the mesh produced from the tsdf in a form that can be seen in RViz. Set `update_mesh_every_n_sec` to control its update rate.
@@ -166,27 +162,34 @@ The voxblox_node publishes and subscribes to the following topics:
   - **`mesh_pointcloud`** of type `pcl::PointCloud<pcl::PointXYZRGB>`. Only appears if `output_mesh_as_pointcloud` is true, outputs a pointcloud containing the verticies of the generated mesh.
   - **`mesh_pcl`** of type `pcl_msgs::PolygonMesh`. Only appears if `output_mesh_as_pcl_mesh` is true, outputs any mesh generated by the generate_mesh service.
   - **`tsdf_slice`** of type `pcl::PointCloud<pcl::PointXYZI>`. Outputs a 2D horizontal slice of the TSDF colored by the stored distance value.
-  - **`esdf_pointcloud`** of type `pcl::PointCloud<pcl::PointXYZI>`. A pointcloud showing the values of all allocated ESDF voxels. Only appears if `generate_esdf` is true.
-  - **`esdf_slice`** of type `pcl::PointCloud<pcl::PointXYZI>`. Outputs a 2D horizontal slice of the ESDF colored by the stored distance value. Only appears if `generate_esdf` is true.
+  - **`esdf_pointcloud`** of type `pcl::PointCloud<pcl::PointXYZI>`. A pointcloud showing the values of all allocated ESDF voxels. Only appears if using `esdf_server`.
+  - **`esdf_slice`** of type `pcl::PointCloud<pcl::PointXYZI>`. Outputs a 2D horizontal slice of the ESDF colored by the stored distance value. Only appears if using `esdf_server`.
   - **`occupied_nodes`** of type `visualization_msgs::MarkerArray`. Visualizes the location of the allocated voxels in the TSDF.
-  
+  - **`tsdf_map_out`** of type `voxblox_msgs::Layer`. Publishes the entire TSDF layer to update other nodes (that listen on tsdf_layer_in). Only published if `publish_tsdf_map` is set to true.
+  - **`esdf_map_out`** of type `voxblox_msgs::Layer`. Publishes the entire ESDF layer to update other nodes (that listen on esdf_layer_in). Only published if `publish_esdf_map` is set to true.
+
 - Subscribed topics:
   - **`transform`** of type `geometry_msgs::TransformStamped`. Only appears if `use_tf_transforms` is false. The transformation from the world frame to the current sensor frame.
   - **`pointcloud`** of type `sensor_msgs::PointCloud2`. The input pointcloud to be integrated.
   - **`freespace_pointcloud`** of type `sensor_msgs::PointCLoud2`. Only appears if `use_freespace_pointcloud` is true. Unlike the `pointcloud` topic where the given points lie on surfaces, the points in the `freespace_pointcloud` are taken to be floating in empty space. These points can assist in generating more complete freespace information in a map.
+  - **`tsdf_map_in`** of type `voxblox_msgs::Layer`. Replaces the current TSDF layer with that from this topic. Voxel size and voxels per side should match.
+  - **`esdf_map_in`** of type `voxblox_msgs::Layer`. Replaces the current ESDF layer with that from this topic. Voxel size and voxels per side should match.
 
 ## Services
 
-The voxblox_node has the following services:
+The tsdf_server and esdf_server have the following services:
 
   - **`generate_mesh`** This service has an empty request and response. Calling this service will generate a new mesh. The mesh will be saved as a ply file unless `mesh_filename` is set to "". The mesh will also be output on the `mesh_pointcloud` topic if `output_mesh_as_pointcloud` is true and on the `mesh_pcl` topic if `output_mesh_as_pcl_mesh` is true.
   - **`generate_esdf`** This service has an empty request and response. It can be used to trigger an esdf map update.
   - **`save_map`** This service has a `voxblox_msgs::FilePath::Request` and `voxblox_msgs::FilePath::Response`. The service call saves the tsdf layer to a .vxblx file.
   - **`load_map`** This service has a `voxblox_msgs::FilePath::Request` and `voxblox_msgs::FilePath::Response`. The service call loads the tsdf layer from a .vxblx file.
-  
+  - **`publish_map`** This service has an empty request and response. Publishes any TSDF and ESDF layers on the `tsdf_map_out` and `esdf_map_out` topics.
+  - **`publish_pointclouds`** This service has an empty request and response. Publishes TSDF and ESDF pointclouds and slices.
+
+
 ## Parameters
 ------
-A summary of the user setable voxblox_node parameters:
+A summary of the user setable tsdf_server and esdf_server parameters:
 
 ### General Parameters
 | Parameter | Description | Default |
@@ -194,6 +197,7 @@ A summary of the user setable voxblox_node parameters:
 | `min_time_between_msgs_sec` |  Minimum time to wait after integrating a message before accepting a new one. | 0.0 |
 | `pointcloud_queue_size` | The size of the queue used to subscribe to pointclouds. | 1 |
 | `verbose` | Prints additional debug and timing information. | true |
+| `max_block_distance_from_body` | Blocks that are more than this distance from the latest robot pose are deleted, saving memory | 3.40282e+38 |
 
 
 ### TSDF Integrator Parameters
@@ -215,7 +219,7 @@ The most important parameter here is the selection of the method:
 | `max_weight` | The upper limit for the weight assigned to a voxel | 10000.0 |
 | `use_const_weight` | If true all points along a ray have equal weighting | false |
 | `allow_clear` | If true points beyond the `max_ray_length_m` will be integrated up to this distance | true |
-| `use_freespace_pointcloud` | If true a second subscription topic `freespace_pointcloud` appears. Clearing rays are cast from beyond this topic's points' truncation distance to assist in clearing freespace voxels | false | 
+| `use_freespace_pointcloud` | If true a second subscription topic `freespace_pointcloud` appears. Clearing rays are cast from beyond this topic's points' truncation distance to assist in clearing freespace voxels | false |
 
 ### Fast TSDF Integrator Specific Parameters
 These parameters are only used if the integrator `method` is set to "fast".
@@ -224,6 +228,7 @@ These parameters are only used if the integrator `method` is set to "fast".
 | --------------------  |:-----------:| :-------:|
 | `start_voxel_subsampling_factor` | Before integration points are inserted into a sub-voxel, only one point is allowed per sub-voxel. This can be thought of as subsampling the pointcloud. The edge length of the sub-voxel is the voxel edge length divided by `start_voxel_subsampling_factor`. | 2 |
 | `max_consecutive_ray_collisions` | When a ray is cast by this integrator it detects if any other ray has already passed through the current voxel this scan. If it passes through more than `max_consecutive_ray_collisions` voxels other rays have seen in a row, it is taken to be adding no new information and the casting stops  | 2 |
+| `max_integration_time_s` | The time budget for frame integration, if this time is exceeded ray casting is stopped early. Used to guarantee real time performance. | 3.40282e+38 |
 | `clear_checks_every_n_frames` | Governs how often the sets that indicate if a sub-voxel is full or a voxel has had a ray passed through it are cleared. | 1 |
 
 ### ESDF Integrator Parameters
@@ -255,6 +260,9 @@ These parameters are only used if the integrator `method` is set to "fast".
 | `color_mode` | The method that will be used for coloring the mesh. Options are "color", "height", "normals", "lambert" and "gray". | "color" |
 | `mesh_min_weight` | The minimum weighting needed for a point to be included in the mesh | 1e-4 |
 | `update_mesh_every_n_sec` | Rate at which the mesh topic will be published to, a value of 0 disables. Note, this will not trigger any other mesh operations, such as generating a ply file. | 0.0 |
+| `publish_tsdf_map` | Whether to publish the complete TSDF map periodically over ROS topics. | false |
+| `publish_esdf_map` | Whether to publish the complete ESDF map periodically over ROS topics. | false |
+| `publish_tsdf_info` | Enables publishing of `tsdf_pointcloud`, `surface_pointcloud` and `occupied_nodes`. | false |
 
 # Modifying Voxblox
 Here's some hints on how to extend voxblox to fit your needs...
@@ -318,8 +326,8 @@ void Block<YOUR_FANCY_VOXEL>::SerializeVoxelData(const YOUR_FANCY_VOXEL* voxels,
   **Have a look at the example package:**
 
   TODO(mfehr, helenol): add example package with a new voxel type
-  
+
 # Transformations in Voxblox
-  
+
 Voxblox uses active transforms and Hamilton quaternions. For futher details on the notation used throughout the code see [the minkindr wiki](https://github.com/ethz-asl/minkindr/wiki/Common-Transformation-Conventions)
-  
+
