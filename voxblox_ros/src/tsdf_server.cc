@@ -71,6 +71,9 @@ TsdfServer::TsdfServer(const ros::NodeHandle& nh,
       transformer_(nh, nh_private) {
   getServerConfigFromRosParam(nh_private);
 
+  // Hide pcl warning spam
+  pcl::console::setVerbosityLevel(pcl::console::L_ALWAYS);
+
   // Advertise topics.
   mesh_pub_ = nh_private_.advertise<voxblox_msgs::Mesh>("mesh", 1, true);
   surface_pointcloud_pub_ =
@@ -147,6 +150,7 @@ TsdfServer::TsdfServer(const ros::NodeHandle& nh,
       "publish_pointclouds", &TsdfServer::publishPointcloudsCallback, this);
   publish_tsdf_map_srv_ = nh_private_.advertiseService(
       "publish_map", &TsdfServer::publishTsdfMapCallback, this);
+  get_tsdf_map_srv_ = nh_private_.advertiseService("get_map", &TsdfServer::getTsdfMapCallback, this);
 
   // If set, use a timer to progressively integrate the mesh.
   double update_mesh_every_n_sec = 0.0;
@@ -455,6 +459,19 @@ bool TsdfServer::publishTsdfMapCallback(
     std_srvs::Empty::Request& /*request*/,
     std_srvs::Empty::Response& /*response*/) {  // NOLINT
   publishMap();
+  return true;
+}
+
+bool TsdfServer::getTsdfMapCallback(
+    voxblox_msgs::GetLayer::Request &request,
+    voxblox_msgs::GetLayer::Response &response)
+{
+  bool only_updated = false;
+  if (request.action == voxblox_msgs::Layer::ACTION_UPDATE) {
+    only_updated = true;
+  }
+  serializeLayerAsMsg<TsdfVoxel>(this->tsdf_map_->getTsdfLayer(), only_updated,
+                                 &response.layer);
   return true;
 }
 
