@@ -144,6 +144,8 @@ void SimpleTsdfVisualizer::run(const Layer<TsdfVoxel>& tsdf_layer) {
     mesh_integrator.reset(new MeshIntegrator<TsdfVoxel>(mesh_config, tsdf_layer,
                                                         mesh_layer.get()));
 
+    SegmentedTsdfMap::Ptr seg_tsdf_map;
+
     constexpr bool kOnlyMeshUpdatedBlocks = false;
     constexpr bool kClearUpdatedFlag = false;
     mesh_integrator->generateMesh(kOnlyMeshUpdatedBlocks, kClearUpdatedFlag);

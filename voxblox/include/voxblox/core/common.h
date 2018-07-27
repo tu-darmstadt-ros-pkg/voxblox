@@ -66,6 +66,9 @@ typedef AlignedVector<Point> Pointcloud;
 typedef AlignedVector<Color> Colors;
 typedef AlignedVector<Label> Labels;
 
+typedef std::unordered_map<Label, Labels> LabelIndexMap;
+typedef std::unordered_map<Label, VoxelIndex> VoxelIndexMap;
+
 // For triangle meshing/vertex access.
 typedef size_t VertexIndex;
 typedef AlignedVector<VertexIndex> VertexIndexList;

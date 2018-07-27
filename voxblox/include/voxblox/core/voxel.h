@@ -39,12 +39,21 @@ struct OccupancyVoxel {
   bool observed = false;
 };
 
+struct SegmentedVoxel {
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
+  Label segment_id = 0;
+  LabelConfidence confidence = 0;
+};
+
+
 // Used for serialization only.
 namespace voxel_types {
 const std::string kNotSerializable = "not_serializable";
 const std::string kTsdf = "tsdf";
 const std::string kEsdf = "esdf";
 const std::string kOccupancy = "occupancy";
+const std::string kSegment = "segment";
 }  // namespace voxel_types
 
 template <typename Type>
@@ -65,6 +74,11 @@ inline std::string getVoxelType<EsdfVoxel>() {
 template <>
 inline std::string getVoxelType<OccupancyVoxel>() {
   return voxel_types::kOccupancy;
+}
+
+template <>
+inline std::string getVoxelType<SegmentedVoxel>() {
+  return voxel_types::kSegment;
 }
 
 }  // namespace voxblox

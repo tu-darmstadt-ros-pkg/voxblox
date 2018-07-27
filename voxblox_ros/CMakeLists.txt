@@ -15,6 +15,7 @@ cs_add_library(${PROJECT_NAME}
   src/simulation_server.cc
   src/transformer.cc
   src/tsdf_server.cc
+  src/segmenter.cc
 )
 
 ############

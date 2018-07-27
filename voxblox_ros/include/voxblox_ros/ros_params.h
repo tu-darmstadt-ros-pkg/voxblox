@@ -5,6 +5,7 @@
 #include <voxblox/core/tsdf_map.h>
 #include <voxblox/integrator/esdf_integrator.h>
 #include <voxblox/integrator/tsdf_integrator.h>
+#include <voxblox/integrator/seg_tsdf_integrator.h>
 
 namespace voxblox {
 
@@ -72,6 +73,39 @@ inline TsdfIntegratorBase::Config getTsdfIntegratorConfigFromRosParam(
   integrator_config.default_truncation_distance =
       static_cast<float>(truncation_distance);
   integrator_config.max_weight = static_cast<float>(max_weight);
+
+  return integrator_config;
+}
+
+inline SegmentedTsdfIntegrator::Config getSegTsdfIntegratorConfigFromRosParam(
+    const ros::NodeHandle& nh_private) {
+  SegmentedTsdfIntegrator::Config integrator_config;
+
+  const TsdfMap::Config tsdf_config = getTsdfMapConfigFromRosParam(nh_private);
+  integrator_config.default_truncation_distance =
+      tsdf_config.tsdf_voxel_size * 2;
+
+  double truncation_distance = integrator_config.default_truncation_distance;
+  nh_private.param("truncation_distance", truncation_distance,
+                   truncation_distance);
+  nh_private.param("max_ray_length_m", integrator_config.max_ray_length_m,
+                   integrator_config.max_ray_length_m);
+  nh_private.param("min_ray_length_m", integrator_config.min_ray_length_m,
+                   integrator_config.min_ray_length_m);
+  nh_private.param("start_voxel_subsampling_factor",
+                   integrator_config.start_voxel_subsampling_factor,
+                   integrator_config.start_voxel_subsampling_factor);
+  nh_private.param("max_consecutive_ray_collisions",
+                   integrator_config.max_consecutive_ray_collisions,
+                   integrator_config.max_consecutive_ray_collisions);
+  nh_private.param("clear_checks_every_n_frames",
+                   integrator_config.clear_checks_every_n_frames,
+                   integrator_config.clear_checks_every_n_frames);
+  nh_private.param("max_integration_time_s",
+                   integrator_config.max_integration_time_s,
+                   integrator_config.max_integration_time_s);
+  integrator_config.default_truncation_distance =
+      static_cast<float>(truncation_distance);
 
   return integrator_config;
 }

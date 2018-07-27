@@ -20,7 +20,8 @@ class EsdfServer : public TsdfServer {
              const EsdfMap::Config& esdf_config,
              const EsdfIntegrator::Config& esdf_integrator_config,
              const TsdfMap::Config& tsdf_config,
-             const TsdfIntegratorBase::Config& tsdf_integrator_config);
+             const TsdfIntegratorBase::Config& tsdf_integrator_config,
+             const SegmentedTsdfIntegrator::Config& seg_integrator_config);
   virtual ~EsdfServer() {}
 
   void publishAllUpdatedEsdfVoxels();

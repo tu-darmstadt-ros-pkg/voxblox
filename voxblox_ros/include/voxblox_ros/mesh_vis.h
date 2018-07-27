@@ -34,6 +34,7 @@
 #include <voxblox/mesh/mesh.h>
 #include <voxblox/mesh/mesh_layer.h>
 #include <voxblox_msgs/Mesh.h>
+#include <voxblox/core/seg_tsdf_map.h>
 
 #include "voxblox_ros/conversions.h"
 
@@ -45,7 +46,8 @@ enum ColorMode {
   kNormals,
   kGray,
   kLambert,
-  kLambertColor
+  kLambertColor,
+  kSegmentation
 };
 
 inline Point lambertShading(const Point& normal, const Point& light,
@@ -123,6 +125,11 @@ inline std_msgs::ColorRGBA getVertexColor(const Mesh::ConstPtr& mesh,
     case kGray:
       color_msg.r = color_msg.g = color_msg.b = 0.5;
       color_msg.a = 1.0;
+      break;
+    case kSegmentation:
+      lambertColorFromColorAndNormal(mesh->colors[index], mesh->normals[index],
+                                     &color_msg);
+
       break;
   }
   return color_msg;

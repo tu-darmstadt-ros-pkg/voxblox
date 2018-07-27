@@ -8,13 +8,20 @@
 #include <pcl_ros/point_cloud.h>
 #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
+#include <sensor_msgs/CameraInfo.h>
 #include <std_srvs/Empty.h>
 #include <visualization_msgs/MarkerArray.h>
 #include <memory>
 #include <string>
 
+#include <cv_bridge/cv_bridge.h>
+#include <opencv2/opencv.hpp>
+#include <pcl/visualization/cloud_viewer.h>
+
 #include <voxblox/core/tsdf_map.h>
+#include <voxblox/core/seg_tsdf_map.h>
 #include <voxblox/integrator/tsdf_integrator.h>
+#include <voxblox/integrator/seg_tsdf_integrator.h>
 #include <voxblox/io/layer_io.h>
 #include <voxblox/io/mesh_ply.h>
 #include <voxblox/mesh/mesh_integrator.h>
@@ -25,6 +32,7 @@
 #include "voxblox_ros/mesh_vis.h"
 #include "voxblox_ros/ptcloud_vis.h"
 #include "voxblox_ros/transformer.h"
+#include "voxblox_ros/segmenter.h"
 
 namespace voxblox {
 
@@ -35,7 +43,8 @@ class TsdfServer {
   TsdfServer(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private);
   TsdfServer(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private,
              const TsdfMap::Config& config,
-             const TsdfIntegratorBase::Config& integrator_config);
+             const TsdfIntegratorBase::Config& integrator_config,
+             const SegmentedTsdfIntegrator::Config& seg_integrator_config);
   virtual ~TsdfServer() {}
 
   void getServerConfigFromRosParam(const ros::NodeHandle& nh_private);
@@ -52,6 +61,11 @@ class TsdfServer {
   void integratePointcloud(const Transformation& T_G_C,
                            const Pointcloud& ptcloud_C, const Colors& colors,
                            const bool is_freespace_pointcloud = false);
+
+  void integrateSegmentation(const Transformation& T_G_C,
+                             const Pointcloud& ptcloud_C,
+                             const Labels& segmentation);
+
   virtual void newPoseCallback(const Transformation& /*new_pose*/) {
     // Do nothing.
   }
@@ -100,7 +114,13 @@ class TsdfServer {
   // Overwrites the layer with what's coming from the topic!
   void tsdfMapCallback(const voxblox_msgs::Layer& layer_msg);
 
+  // Update the depth camera info used for reprojections
+  void cameraInfoCallback(const sensor_msgs::CameraInfoConstPtr msg);
+
  protected:
+
+  void applySegmentColors();
+
   ros::NodeHandle nh_;
   ros::NodeHandle nh_private_;
 
@@ -169,6 +189,9 @@ class TsdfServer {
   std::shared_ptr<TsdfMap> tsdf_map_;
   std::unique_ptr<TsdfIntegratorBase> tsdf_integrator_;
 
+  std::shared_ptr<SegmentedTsdfMap> seg_tsdf_map_;
+  std::unique_ptr<SegmentedTsdfIntegrator> seg_tsdf_integrator_;
+
   // Mesh accessories.
   std::shared_ptr<MeshLayer> mesh_layer_;
   std::unique_ptr<MeshIntegrator<TsdfVoxel>> mesh_integrator_;
@@ -176,6 +199,11 @@ class TsdfServer {
   // Transformer object to keep track of either TF transforms or messages from
   // a transform topic.
   Transformer transformer_;
+
+  Segmenter segmenter_;
+
+  // Subscriber for the camera info needed to do the reprojections
+  ros::Subscriber depth_cam_info_sub_;
 };
 
 }  // namespace voxblox
