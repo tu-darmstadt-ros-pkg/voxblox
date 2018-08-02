@@ -331,34 +331,32 @@ LabelIndexMap SegmentedTsdfIntegrator::propagateSegmentLabels(const Labels& segm
     std::cout << "Map only has unsegmented voxels!" << std::endl;
 
     for (auto segment: segment_map) {
-
       Labels& prop_idxs  = propagated_labels[segment.first];
       const Labels& seg_idxs = segment_map.at(segment.first);
       prop_idxs.insert(prop_idxs.end(), seg_idxs.begin(), seg_idxs.end());
-
     }
 
     return  propagated_labels;
   }
 
-  Label max_label = segment_blocks_map_.size()-1;
+  Label max_label = static_cast<Label>(segment_blocks_map_.size()-1);
   Label best_overlap_id;
 
-  for (auto global_segmentation: segment_map_) {
+  for (auto img_segmentation: segment_map) {
+
+    // skip the unsegmented part and the noisy parts of the image
+    if (img_segmentation.first == 0 || img_segmentation.second.size() < min_pixel_size)
+      continue;
 
     float best_overlap = -std::numeric_limits<float>::max();
 
-    for (auto img_segmentation: segment_map) {
-
-      // skip the unsegmented part and the noisy parts of the image
-      if (img_segmentation.first == 0 || img_segmentation.second.size() < min_pixel_size)
-        continue;
+    for (auto global_segmentation: segment_map_) {
 
       float overlap = computeSegmentOverlap(global_segmentation.second, img_segmentation.second);
 
       if (overlap >= best_overlap) {
         best_overlap = overlap;
-        best_overlap_id = img_segmentation.first;
+        best_overlap_id = global_segmentation.first;
       }
 
       if (overlap >= min_merge_overlap && global_segmentation.first != 0) {
@@ -370,21 +368,21 @@ LabelIndexMap SegmentedTsdfIntegrator::propagateSegmentLabels(const Labels& segm
     if (best_overlap < 0.01f)
       continue;
 
-    std::cout << "max overlapping segment for segment " << global_segmentation.first << " is " << best_overlap_id <<
+    std::cout << "max overlapping segment for segment " << img_segmentation.first << " is " << best_overlap_id <<
                  " with an overlap of " << best_overlap << std::endl;
 
     // if we have enough overlap, keep the global label, otherwise propagate the label of the depth img
-    if (best_overlap >= min_overlap && global_segmentation.first != 0) {
+    if (best_overlap >= min_overlap && best_overlap_id != 0) {
 
-      Labels& prop_idxs  = propagated_labels[global_segmentation.first];
+      Labels& prop_idxs  = propagated_labels[best_overlap_id];
       //const Labels& glob_idxs  = global_segmentation.second;
-      const Labels& glob_idxs = segment_map.at(best_overlap_id);
+      const Labels& glob_idxs = img_segmentation.second;
 
       prop_idxs.insert(prop_idxs.end(), glob_idxs.begin(), glob_idxs.end());
 
     } else {
       Labels& prop_idxs  = propagated_labels[max_label++];
-      const Labels& img_idxs = segment_map.at(best_overlap_id);
+      const Labels& img_idxs = img_segmentation.second;
 
       prop_idxs.insert(prop_idxs.end(), img_idxs.begin(), img_idxs.end());
     }
