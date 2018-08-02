@@ -109,7 +109,10 @@ class SegmentedTsdfIntegrator {
 
   float computeSegmentOverlap(Labels& segment1, Labels& segment2);
 
-  void mergeSegments(LabelIndexMap& propagated_labels);
+  void checkMergeCandidates(LabelIndexMap& propagated_labels);
+  void mergeSegmentLabels(LabelIndexMap& propagated_labels, const LabelPair& label_pair);
+
+  void applyLabelToVoxels(const BlockIndex& block_idx, Label old_segment, Label new_segment);
 
   Config config_;
 
@@ -147,6 +150,8 @@ class SegmentedTsdfIntegrator {
   VoxelIndexMap visible_voxels_;
   LabelIndexMap segment_map_;
   LabelIndexMap segment_merge_candidates_;
+  LabelPairConfidenceMap label_pair_confidences_;
+  LabelBlockIndexesMap  segment_blocks_map_;
 
 private:
  // Two approximate sets are used below. The limitations of these sets are

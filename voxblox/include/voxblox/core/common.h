@@ -57,6 +57,21 @@ typedef AlignedVector<AnyIndex> IndexVector;
 typedef IndexVector BlockIndexList;
 typedef IndexVector VoxelIndexList;
 
+struct IndexHash {
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
+  static constexpr size_t prime1 = 73856093;
+  static constexpr size_t prime2 = 19349663;
+  static constexpr size_t prime3 = 83492791;
+
+  std::size_t operator()(const AnyIndex& index) const {
+    return (static_cast<unsigned int>(index.x()) * prime1 ^ index.y() * prime2 ^
+            index.z() * prime3);
+  }
+};
+
+typedef std::unordered_set<AnyIndex, IndexHash> BlockIndexSet;
+
 struct Color;
 typedef uint32_t Label;
 typedef uint32_t LabelConfidence;
@@ -68,6 +83,19 @@ typedef AlignedVector<Label> Labels;
 
 typedef std::unordered_map<Label, Labels> LabelIndexMap;
 typedef std::unordered_map<Label, VoxelIndex> VoxelIndexMap;
+typedef std::unordered_map<Label, BlockIndexSet> LabelBlockIndexesMap;
+
+struct PairHash {
+    template <class T1, class T2>
+    std::size_t operator () (const std::pair<T1,T2> &p) const {
+        auto h1 = std::hash<T1>{}(p.first);
+        auto h2 = std::hash<T2>{}(p.second);
+        return h1 ^ h2;
+    }
+};
+
+typedef std::pair<Label, Label> LabelPair;
+typedef std::unordered_map<LabelPair, LabelConfidence, PairHash> LabelPairConfidenceMap;
 
 // For triangle meshing/vertex access.
 typedef size_t VertexIndex;

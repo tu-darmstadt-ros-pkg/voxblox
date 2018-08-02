@@ -46,7 +46,7 @@ inline bool SegmentedTsdfIntegrator::isPointValid(const Point& point_C) const {
   }
 }
 
-// Will return a pointer to a voxel located at global_voxel_idx in the tsdf
+// Will return a pointer to a voxel located at global_voxel_idx in the seg_tsdf
 // layer. Thread safe.
 // Takes in the last_block_idx and last_block to prevent unneeded map lookups.
 // If the block this voxel would be in has not been allocated, a block in
@@ -113,7 +113,7 @@ void SegmentedTsdfIntegrator::updateLayerWithStoredBlocks() {
 
 // Updates tsdf_voxel. Thread safe.
 void SegmentedTsdfIntegrator::updateSegmentedVoxel(const Point& /*origin*/,
-                                         const Point& point_G,
+                                         const Point& /*point_G*/,
                                          const VoxelIndex& global_voxel_idx,
                                          const Label& segment,
                                          SegmentedVoxel* seg_voxel) {
@@ -154,7 +154,7 @@ void SegmentedTsdfIntegrator::updateSegmentedVoxel(const VoxelIndex& global_voxe
   } else if (seg_voxel->segment_id == segment) {
     seg_voxel->confidence++;
   } else {
-    if (seg_voxel->confidence-- == 0) {
+    if (--seg_voxel->confidence == 0) {
       seg_voxel->segment_id = segment;
     }
   }
@@ -237,8 +237,10 @@ void SegmentedTsdfIntegrator::integrateSegmentedPointCloud(const Transformation&
   for (auto item : propagated_labels)
     propagated_map_size += item.second.size();
   std::cout << "propagated map size: " << propagated_map_size << std::endl;
-  // TODO: Segment merging
-  mergeSegments(propagated_labels);
+
+  timing::Timer seg_check_merge_candidates_timer("seg_check_merge_candidates");
+  checkMergeCandidates(propagated_labels);
+  seg_check_merge_candidates_timer.Stop();
 
   timing::Timer seg_update_global_segments_timer("seg_update_global_segments");
   updateGlobalSegments(propagated_labels);
@@ -282,7 +284,7 @@ void SegmentedTsdfIntegrator::getVisibleVoxels(const Transformation& T_G_C,
     RayCaster ray_caster(origin, point_G, is_clearing,
                          false,
                          config_.max_ray_length_m, voxel_size_inv_,
-                         0.005, cast_from_origin);
+                         0.0f, cast_from_origin);
 
     int64_t consecutive_ray_collisions = 0;
 
@@ -311,6 +313,7 @@ void SegmentedTsdfIntegrator::getVisibleVoxels(const Transformation& T_G_C,
       //std::cout << "voxel segment: " << voxel->segment_id << " segment_map_[voxel->segment_id] size: " << segment_map_[voxel->segment_id].size() << std::endl;
       visible_voxels_[point_idx] = global_voxel_idx;
       segment_map_[voxel->segment_id].emplace_back(point_idx);
+      segment_blocks_map_[voxel->segment_id].emplace(block_idx);
     }
   }
 }
@@ -338,7 +341,7 @@ LabelIndexMap SegmentedTsdfIntegrator::propagateSegmentLabels(const Labels& segm
     return  propagated_labels;
   }
 
-  Label max_label = segment_map_.size();
+  Label max_label = segment_blocks_map_.size()-1;
   Label best_overlap_id;
 
   for (auto global_segmentation: segment_map_) {
@@ -356,7 +359,6 @@ LabelIndexMap SegmentedTsdfIntegrator::propagateSegmentLabels(const Labels& segm
       if (overlap >= best_overlap) {
         best_overlap = overlap;
         best_overlap_id = img_segmentation.first;
-
       }
 
       if (overlap >= min_merge_overlap && global_segmentation.first != 0) {
@@ -372,22 +374,19 @@ LabelIndexMap SegmentedTsdfIntegrator::propagateSegmentLabels(const Labels& segm
                  " with an overlap of " << best_overlap << std::endl;
 
     // if we have enough overlap, keep the global label, otherwise propagate the label of the depth img
-    if (best_overlap >= min_overlap) {
+    if (best_overlap >= min_overlap && global_segmentation.first != 0) {
 
       Labels& prop_idxs  = propagated_labels[global_segmentation.first];
       //const Labels& glob_idxs  = global_segmentation.second;
       const Labels& glob_idxs = segment_map.at(best_overlap_id);
 
-      if (glob_idxs.size() > min_pixel_size) {
-        prop_idxs.insert(prop_idxs.end(), glob_idxs.begin(), glob_idxs.end());
-      }
+      prop_idxs.insert(prop_idxs.end(), glob_idxs.begin(), glob_idxs.end());
+
     } else {
       Labels& prop_idxs  = propagated_labels[max_label++];
       const Labels& img_idxs = segment_map.at(best_overlap_id);
 
-      if (img_idxs.size() > min_pixel_size) {
-        prop_idxs.insert(prop_idxs.end(), img_idxs.begin(), img_idxs.end());
-      }
+      prop_idxs.insert(prop_idxs.end(), img_idxs.begin(), img_idxs.end());
     }
   }
 
@@ -395,9 +394,10 @@ LabelIndexMap SegmentedTsdfIntegrator::propagateSegmentLabels(const Labels& segm
 }
 
 void SegmentedTsdfIntegrator::updateGlobalSegments(const LabelIndexMap& propagated_labels) {
-  for (auto segment : propagated_labels) {
-    for (auto point_idx: segment.second) {
-      updateSegmentedVoxel(visible_voxels_[point_idx], segment.first);
+  for (const auto& segment : propagated_labels) {
+    for (const auto& point_idx: segment.second) {
+      const VoxelIndex& glob_voxel_idx = visible_voxels_[point_idx];
+      updateSegmentedVoxel(glob_voxel_idx, segment.first);
     }
   }
 }
@@ -415,32 +415,104 @@ float SegmentedTsdfIntegrator::computeSegmentOverlap(Labels& segment1, Labels& s
   return static_cast<float>(intersection_indices.size()) / static_cast<float>(segment1.size());
 }
 
-void SegmentedTsdfIntegrator::mergeSegments(LabelIndexMap& propagated_labels) {
+void SegmentedTsdfIntegrator::checkMergeCandidates(LabelIndexMap& propagated_labels) {
+
+  LabelPairConfidenceMap candidate_pairs;
+
+  // TODO: introduce param
+  LabelConfidence min_merge_confidence = 4;
+
+  // create all pairs of merge candidates
   for (auto candidate: segment_merge_candidates_) {
     const Labels& common_labels = candidate.second;
 
     if(common_labels.size() <= 1)
       continue;
 
-    Label merged_label = *std::min_element(common_labels.begin(), common_labels.end());
-
-    std::cout << "Using label " << merged_label << " for the following labels: ";
-
-    for (Label l: common_labels)
-      std::cout << l << " ";
-
-    std::cout << std::endl;
+    Label min_label = *std::min_element(common_labels.begin(), common_labels.end());
 
     for (Label l: common_labels) {
 
-      Labels& target_idxs  = propagated_labels[merged_label];
-      const Labels& source_idxs = propagated_labels[l];
-      target_idxs.insert(target_idxs.end(), source_idxs.begin(), source_idxs.end());
+      if (min_label == l)
+        continue;
 
-      propagated_labels.erase(l);
+      candidate_pairs.emplace(LabelPair(min_label, l), 0);
+    }
+  }
+
+  // increase the confidence for all observed candidate pairs
+  for (auto label_pair: candidate_pairs) {
+    auto it = label_pair_confidences_.find(label_pair.first);
+
+    if (it == label_pair_confidences_.end())
+      label_pair_confidences_.emplace(label_pair.first, 1);
+    else
+      it->second++;
+  }
+
+  auto it = label_pair_confidences_.begin();
+
+  while (it != label_pair_confidences_.end()) {
+
+    // decrease the confidence for all unobserved candidate pairs
+    if (candidate_pairs.count(it->first) == 0)
+      it->second--;
+
+    std::cout << "label confidence of (" << it->first.first << ", " << it->first.second << ") is " << it->second << std::endl;
+
+    // merge the labels if our confidence is high enough and erase the entry afterwards
+    if (it->second >= min_merge_confidence) {
+      std::cout << "merging the labels" << std::endl;
+      mergeSegmentLabels(propagated_labels, it->first);
+      it = label_pair_confidences_.erase(it);
+    } else if (it->second == 0) {
+      std::cout << "forgetting the label pair" << std::endl;
+      it = label_pair_confidences_.erase(it);
+    } else {
+      it++;
     }
   }
 
   segment_merge_candidates_.clear();
 }
+
+void SegmentedTsdfIntegrator::applyLabelToVoxels(const BlockIndex& block_idx, Label old_segment, Label new_segment) {
+
+  if (!segmentation_layer_->hasBlock(block_idx))
+    return;
+
+  Block<SegmentedVoxel>& block = segmentation_layer_->getBlockByIndex(block_idx);
+
+  for (int i = 0; i < block.voxel_size(); i++) {
+
+    SegmentedVoxel& seg_voxel = block.getVoxelByLinearIndex(i);
+
+    if (seg_voxel.segment_id == old_segment) {
+
+      // TODO: use mutex
+      // Lookup the mutex that is responsible for this voxel and lock it
+      //std::lock_guard<std::mutex> lock(mutexes_.get(global_voxel_idx));
+
+      seg_voxel.segment_id = new_segment;
+    }
+  }
+}
+
+void SegmentedTsdfIntegrator::mergeSegmentLabels(LabelIndexMap& propagated_labels, const LabelPair& label_pair) {
+
+  Label target_label = label_pair.first;
+  Label old_label = label_pair.second;
+
+  for (const BlockIndex& block_idx: segment_blocks_map_[old_label]) {
+    applyLabelToVoxels(block_idx, old_label, target_label);
+  }
+
+  segment_blocks_map_.erase(old_label);
+
+  Labels& target_idxs  = propagated_labels[target_label];
+  const Labels& source_idxs = propagated_labels[old_label];
+  target_idxs.insert(target_idxs.end(), source_idxs.begin(), source_idxs.end());
+  propagated_labels.erase(old_label);
+}
+
 }  // namespace voxblox
