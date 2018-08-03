@@ -481,7 +481,7 @@ void SegmentedTsdfIntegrator::applyLabelToVoxels(const BlockIndex& block_idx, La
 
   Block<SegmentedVoxel>& block = segmentation_layer_->getBlockByIndex(block_idx);
 
-  for (int i = 0; i < block.voxel_size(); i++) {
+  for (int i = 0; i < block.num_voxels(); i++) {
 
     SegmentedVoxel& seg_voxel = block.getVoxelByLinearIndex(i);
 
