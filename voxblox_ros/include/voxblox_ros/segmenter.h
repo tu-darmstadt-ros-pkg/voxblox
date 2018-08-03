@@ -53,6 +53,8 @@ class Segmenter {
 
  protected:
 
+  void initColorMap(int num_entries);
+
   void publishImg(const cv::Mat& img, const std_msgs::Header& header, ros::Publisher& pub);
 
   void detectConcaveBoundaries(const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr cloud,

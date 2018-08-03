@@ -9,6 +9,8 @@ Segmenter::Segmenter(const ros::NodeHandle& nh_private) :
   segmentation_pub_ = nh_private_.advertise<sensor_msgs::Image>("segmentation", 1, true);
   concave_edges_pub_ = nh_private_.advertise<sensor_msgs::Image>("concave_edges", 1, true);
   depth_disc_edges_pub_ = nh_private_.advertise<sensor_msgs::Image>("depth_disc_edges", 1, true);
+
+  initColorMap(256);
 }
 
 void Segmenter::segmentPointcloud(const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr cloud, Labels& segments, LabelIndexMap& segment_map) {
@@ -243,6 +245,28 @@ Color Segmenter::getSegmentColor(uint segment) {
     segment_colors_.emplace(segment, c);
 
     return c;
+  }
+}
+
+// Adapted color map function for the PASCAL VOC data set.
+void Segmenter::initColorMap(int num_entries) {
+  segment_colors_.emplace(0, Color::Black());
+
+  for (int i = 1; i < num_entries; i++) {
+    uint8_t r = 0;
+    uint8_t g = 0;
+    uint8_t b = 0;
+    uint8_t c = static_cast<uint8_t>(i);
+
+    for (int j = 0; j < 8; j++){
+      r |= ((c >> 0) & 1) << (7-j);
+      g |= ((c >> 1) & 1) << (7-j);
+      b |= ((c >> 2) & 1) << (7-j);
+      c = c >> 3;
+    }
+
+    Color color(r, g, b);
+    segment_colors_.emplace(i, color);
   }
 }
 
