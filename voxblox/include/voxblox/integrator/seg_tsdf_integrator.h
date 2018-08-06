@@ -47,6 +47,12 @@ class SegmentedTsdfIntegrator {
     int max_consecutive_ray_collisions = 2;
     int clear_checks_every_n_frames = 1;
     float max_integration_time_s = std::numeric_limits<float>::max();
+
+    // segmentation specific
+    LabelConfidence min_merge_confidence = 3;
+    float min_segment_overlap = 0.3f;
+    size_t min_segment_pixel_size = 50;
+    float min_segment_merge_overlap = 0.2f;
   };
 
   SegmentedTsdfIntegrator(const Config& config, Layer<TsdfVoxel>* tsdf_layer,

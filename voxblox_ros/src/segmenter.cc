@@ -11,9 +11,18 @@ Segmenter::Segmenter(const ros::NodeHandle& nh_private) :
   depth_disc_edges_pub_ = nh_private_.advertise<sensor_msgs::Image>("depth_disc_edges", 1, true);
 
   initColorMap(256);
+
+  nh_private_.param("seg_canny_low_tresh", canny_low_tresh_, 80);
+  nh_private_.param("seg_canny_high_tresh", canny_high_tresh_, 240);
+  nh_private_.param("seg_canny_kernel_size", canny_kernel_size_, 3);
+  nh_private_.param("seg_min_concavity", min_concavity_, 0.97f);
+  nh_private_.param("seg_max_dist_step_", max_dist_step_, 0.005f);
 }
 
 void Segmenter::segmentPointcloud(const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr cloud, Labels& segments, LabelIndexMap& segment_map) {
+
+  if (cloud->points.empty())
+    return;
 
   int width = static_cast<int>(cloud->width);
   int height = static_cast<int>(cloud->height);
@@ -143,8 +152,7 @@ void Segmenter::detectConcaveBoundaries(const pcl::PointCloud<pcl::PointXYZRGB>:
         }
       }
 
-      // TODO: add param
-      if (min_concavity >= 0.97f)
+      if (min_concavity >= min_concavity_)
       {
         edge_img.at<uchar>(row, col) = 255;
       }
@@ -178,8 +186,7 @@ void Segmenter::detectGeometricalBoundaries(const pcl::PointCloud<pcl::PointXYZR
 
       }
 
-      // TODO: add param
-      if (max_dist <= 0.005f)
+      if (max_dist <= max_dist_step_)
       {
         edge_img.at<uchar>(row, col) = 255;
       }

@@ -322,10 +322,6 @@ LabelIndexMap SegmentedTsdfIntegrator::propagateSegmentLabels(const Labels& segm
                                                               const LabelIndexMap& segment_map) {
 
   LabelIndexMap propagated_labels;
-  // TODO introduce a parameter
-  float min_overlap = 0.3f;
-  size_t min_pixel_size = 50;
-  float min_merge_overlap = 0.2f;
 
   if (segment_map_.size() == 1 && segment_map_.find(0) != segment_map_.end()) {
     std::cout << "Map only has unsegmented voxels!" << std::endl;
@@ -345,7 +341,7 @@ LabelIndexMap SegmentedTsdfIntegrator::propagateSegmentLabels(const Labels& segm
   for (auto img_segmentation: segment_map) {
 
     // skip the unsegmented part and the noisy parts of the image
-    if (img_segmentation.first == 0 || img_segmentation.second.size() < min_pixel_size)
+    if (img_segmentation.first == 0 || img_segmentation.second.size() < config_.min_segment_pixel_size)
       continue;
 
     float best_overlap = -std::numeric_limits<float>::max();
@@ -359,7 +355,7 @@ LabelIndexMap SegmentedTsdfIntegrator::propagateSegmentLabels(const Labels& segm
         best_overlap_id = global_segmentation.first;
       }
 
-      if (overlap >= min_merge_overlap && global_segmentation.first != 0) {
+      if (overlap >= config_.min_segment_merge_overlap && global_segmentation.first != 0) {
         segment_merge_candidates_[img_segmentation.first].emplace_back(global_segmentation.first);
       }
     }
@@ -372,7 +368,7 @@ LabelIndexMap SegmentedTsdfIntegrator::propagateSegmentLabels(const Labels& segm
                  " with an overlap of " << best_overlap << std::endl;
 
     // if we have enough overlap, keep the global label, otherwise propagate the label of the depth img
-    if (best_overlap >= min_overlap && best_overlap_id != 0) {
+    if (best_overlap >= config_.min_segment_overlap && best_overlap_id != 0) {
 
       Labels& prop_idxs  = propagated_labels[best_overlap_id];
       //const Labels& glob_idxs  = global_segmentation.second;
@@ -417,9 +413,6 @@ void SegmentedTsdfIntegrator::checkMergeCandidates(LabelIndexMap& propagated_lab
 
   LabelPairConfidenceMap candidate_pairs;
 
-  // TODO: introduce param
-  LabelConfidence min_merge_confidence = 4;
-
   // create all pairs of merge candidates
   for (auto candidate: segment_merge_candidates_) {
     const Labels& common_labels = candidate.second;
@@ -459,7 +452,7 @@ void SegmentedTsdfIntegrator::checkMergeCandidates(LabelIndexMap& propagated_lab
     std::cout << "label confidence of (" << it->first.first << ", " << it->first.second << ") is " << it->second << std::endl;
 
     // merge the labels if our confidence is high enough and erase the entry afterwards
-    if (it->second >= min_merge_confidence) {
+    if (it->second >= config_.min_merge_confidence) {
       std::cout << "merging the labels" << std::endl;
       mergeSegmentLabels(propagated_labels, it->first);
       it = label_pair_confidences_.erase(it);

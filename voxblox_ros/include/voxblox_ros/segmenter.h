@@ -88,6 +88,12 @@ class Segmenter {
 
   std::map<uint, Color> segment_colors_;
 
+  int canny_low_tresh_;
+  int canny_high_tresh_;
+  int canny_kernel_size_;
+  float min_concavity_;
+  float max_dist_step_;
+
   ros::Publisher edge_img_pub_;
   ros::Publisher segmentation_pub_;
   ros::Publisher concave_edges_pub_;

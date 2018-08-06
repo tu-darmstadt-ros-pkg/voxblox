@@ -104,6 +104,30 @@ inline SegmentedTsdfIntegrator::Config getSegTsdfIntegratorConfigFromRosParam(
   nh_private.param("max_integration_time_s",
                    integrator_config.max_integration_time_s,
                    integrator_config.max_integration_time_s);
+
+  nh_private.param("min_segment_overlap",
+                   integrator_config.min_segment_overlap,
+                   integrator_config.min_segment_overlap);
+  nh_private.param("min_segment_merge_overlap",
+                   integrator_config.min_segment_merge_overlap,
+                   integrator_config.min_segment_merge_overlap);
+
+  int min_segment_pixel_size = static_cast<int>(integrator_config.min_segment_pixel_size);
+  int min_merge_confidence = static_cast<int>(integrator_config.min_merge_confidence);
+
+  nh_private.param("min_segment_pixel_size",
+                   min_segment_pixel_size,
+                   min_segment_pixel_size);
+  nh_private.param("min_merge_confidence",
+                   min_merge_confidence,
+                   min_merge_confidence);
+
+  if (min_segment_pixel_size >= 0)
+    integrator_config.min_segment_pixel_size = static_cast<size_t>(min_segment_pixel_size);
+
+  if (min_merge_confidence >= 0)
+    integrator_config.min_merge_confidence = static_cast<LabelConfidence>(min_merge_confidence);
+
   integrator_config.default_truncation_distance =
       static_cast<float>(truncation_distance);
 
