@@ -92,9 +92,6 @@ class SegmentedTsdfIntegrator {
   void updateLayerWithStoredBlocks();
 
   // Updates seg_voxel. Thread safe.
-  void updateSegmentedVoxel(const Point& origin, const Point& point_G,
-                       const VoxelIndex& global_voxel_index, const Label& segment, SegmentedVoxel* seg_voxel);
-
   void updateSegmentedVoxel(const VoxelIndex& global_voxel_index, const Label& segment);
 
   // Thread safe.

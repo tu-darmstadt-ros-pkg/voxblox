@@ -14,7 +14,6 @@
 #include <string>
 
 #include <pcl/features/integral_image_normal.h>
-#include <pcl/visualization/cloud_viewer.h>
 #include <pcl/io/pcd_io.h>
 #include <pcl/io/point_cloud_image_extractors.h>
 #include <pcl/io/png_io.h>

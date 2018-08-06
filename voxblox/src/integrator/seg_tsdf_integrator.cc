@@ -111,31 +111,6 @@ void SegmentedTsdfIntegrator::updateLayerWithStoredBlocks() {
   temp_block_map_.clear();
 }
 
-// Updates tsdf_voxel. Thread safe.
-void SegmentedTsdfIntegrator::updateSegmentedVoxel(const Point& /*origin*/,
-                                         const Point& /*point_G*/,
-                                         const VoxelIndex& global_voxel_idx,
-                                         const Label& segment,
-                                         SegmentedVoxel* seg_voxel) {
-  DCHECK(seg_voxel != nullptr);
-
-  const Point voxel_center =
-      getCenterPointFromGridIndex(global_voxel_idx, voxel_size_);
-
-  // Lookup the mutex that is responsible for this voxel and lock it
-  std::lock_guard<std::mutex> lock(mutexes_.get(global_voxel_idx));
-
-  if (seg_voxel->segment_id == 0) {
-    seg_voxel->segment_id = segment;
-    seg_voxel->confidence++;
-  } else
-  {
-    // TODO
-    seg_voxel->segment_id = segment;
-    seg_voxel->confidence++;
-  }
-}
-
 // Updates segmented voxel. Thread safe.
 void SegmentedTsdfIntegrator::updateSegmentedVoxel(const VoxelIndex& global_voxel_idx,
                                                    const Label& segment) {
