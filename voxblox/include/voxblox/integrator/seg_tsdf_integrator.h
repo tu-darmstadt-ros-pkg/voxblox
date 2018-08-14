@@ -156,6 +156,11 @@ class SegmentedTsdfIntegrator {
   LabelPairConfidenceMap label_pair_confidences_;
   LabelBlockIndexesMap  segment_blocks_map_;
 
+  Label max_label_;
+
+  uint num_frames_;
+
+
 private:
  // Two approximate sets are used below. The limitations of these sets are
  // outlined in approx_hash_array.h, but in brief they are thread safe and very

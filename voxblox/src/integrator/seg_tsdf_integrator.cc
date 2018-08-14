@@ -11,7 +11,7 @@ namespace voxblox {
 
 SegmentedTsdfIntegrator::SegmentedTsdfIntegrator(const Config& config,
                                        Layer<TsdfVoxel>* tsdf_layer, Layer<SegmentedVoxel>* segmentation_layer)
-    : config_(config), tsdf_layer_(tsdf_layer), segmentation_layer_(segmentation_layer) {
+    : config_(config), tsdf_layer_(tsdf_layer), segmentation_layer_(segmentation_layer), max_label_(0), num_frames_(0) {
   DCHECK(tsdf_layer_);
   DCHECK(segmentation_layer_);
 
@@ -371,8 +371,12 @@ LabelIndexMap SegmentedTsdfIntegrator::propagateSegmentLabels(const Labels& segm
 void SegmentedTsdfIntegrator::updateGlobalSegments(const LabelIndexMap& propagated_labels) {
   for (const auto& segment : propagated_labels) {
     for (const auto& point_idx: segment.second) {
-      const VoxelIndex& glob_voxel_idx = visible_voxels_[point_idx];
-      updateSegmentedVoxel(glob_voxel_idx, segment.first);
+
+      auto it = visible_voxels_.find(point_idx);
+
+      if (it != visible_voxels_.end()) {
+        updateSegmentedVoxel(it->second, segment.first);
+      }
     }
   }
 }
@@ -455,7 +459,9 @@ void SegmentedTsdfIntegrator::applyLabelToVoxels(const BlockIndex& block_idx, La
 
   Block<SegmentedVoxel>& block = segmentation_layer_->getBlockByIndex(block_idx);
 
-  for (int i = 0; i < block.num_voxels(); i++) {
+  block.set_updated(true);
+
+  for (size_t i = 0; i < block.num_voxels(); i++) {
 
     SegmentedVoxel& seg_voxel = block.getVoxelByLinearIndex(i);
 
@@ -477,6 +483,7 @@ void SegmentedTsdfIntegrator::mergeSegmentLabels(LabelIndexMap& propagated_label
 
   for (const BlockIndex& block_idx: segment_blocks_map_[old_label]) {
     applyLabelToVoxels(block_idx, old_label, target_label);
+    segment_blocks_map_[target_label].emplace(block_idx);
   }
 
   segment_blocks_map_.erase(old_label);
