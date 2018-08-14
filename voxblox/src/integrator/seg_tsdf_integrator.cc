@@ -255,16 +255,20 @@ void SegmentedTsdfIntegrator::getVisibleVoxels(const Transformation& T_G_C,
       continue;
     }
 
-    constexpr bool cast_from_origin = false;
+    constexpr bool cast_from_origin = true;
     RayCaster ray_caster(origin, point_G, is_clearing,
                          false,
                          config_.max_ray_length_m, voxel_size_inv_,
-                         0.0f, cast_from_origin);
+                         config_.default_truncation_distance, cast_from_origin);
 
     int64_t consecutive_ray_collisions = 0;
 
     Block<SegmentedVoxel>::Ptr block = nullptr;
     BlockIndex block_idx;
+
+    VoxelIndex best_voxel_idx;
+    float min_sdf = std::numeric_limits<float>::max();
+
     while (ray_caster.nextRayIndex(&global_voxel_idx)) {
       // Check if the current voxel has been seen by any ray cast this scan. If
       // it has increment the consecutive_ray_collisions counter, otherwise
@@ -279,17 +283,32 @@ void SegmentedTsdfIntegrator::getVisibleVoxels(const Transformation& T_G_C,
         break;
       }
 
-      SegmentedVoxel* voxel =
-          allocateStorageAndGetVoxelPtr(global_voxel_idx, &block, &block_idx);
+      const TsdfVoxel* tsdf_voxel = tsdf_layer_->getVoxelPtrByGlobalIndex(global_voxel_idx);
 
-      if (voxel == nullptr)
+      // ignore invalid voxels
+      if (tsdf_voxel->weight < 1e-6f) {
         continue;
+      }
 
-      //std::cout << "voxel segment: " << voxel->segment_id << " segment_map_[voxel->segment_id] size: " << segment_map_[voxel->segment_id].size() << std::endl;
-      visible_voxels_[point_idx] = global_voxel_idx;
-      segment_map_[voxel->segment_id].emplace_back(point_idx);
-      segment_blocks_map_[voxel->segment_id].emplace(block_idx);
+      // get the voxel closest to the surface for each ray
+      if (std::abs(tsdf_voxel->distance) < min_sdf) {
+        min_sdf = std::abs(tsdf_voxel->distance);
+        best_voxel_idx = global_voxel_idx;
+      }
     }
+
+    SegmentedVoxel* voxel = allocateStorageAndGetVoxelPtr(best_voxel_idx, &block, &block_idx);
+
+    if (voxel == nullptr)
+    {
+      std::cout << "[getVisibleVoxels] could not find voxel " << best_voxel_idx.transpose() << std::endl;
+      continue;
+    }
+
+    //std::cout << "voxel segment: " << voxel->segment_id << " segment_map_[voxel->segment_id] size: " << segment_map_[voxel->segment_id].size() << std::endl;
+    visible_voxels_[point_idx] = best_voxel_idx;
+    segment_map_[voxel->segment_id].emplace_back(point_idx);
+    segment_blocks_map_[voxel->segment_id].emplace(block_idx);
   }
 }
 
@@ -298,19 +317,6 @@ LabelIndexMap SegmentedTsdfIntegrator::propagateSegmentLabels(const Labels& segm
 
   LabelIndexMap propagated_labels;
 
-  if (segment_map_.size() == 1 && segment_map_.find(0) != segment_map_.end()) {
-    std::cout << "Map only has unsegmented voxels!" << std::endl;
-
-    for (auto segment: segment_map) {
-      Labels& prop_idxs  = propagated_labels[segment.first];
-      const Labels& seg_idxs = segment_map.at(segment.first);
-      prop_idxs.insert(prop_idxs.end(), seg_idxs.begin(), seg_idxs.end());
-    }
-
-    return  propagated_labels;
-  }
-
-  Label max_label = static_cast<Label>(segment_blocks_map_.size()-1);
   Label best_overlap_id;
 
   for (auto img_segmentation: segment_map) {
@@ -339,8 +345,8 @@ LabelIndexMap SegmentedTsdfIntegrator::propagateSegmentLabels(const Labels& segm
     if (best_overlap < 0.01f)
       continue;
 
-    std::cout << "max overlapping segment for segment " << img_segmentation.first << " is " << best_overlap_id <<
-                 " with an overlap of " << best_overlap << std::endl;
+    std::cout << "max overlapping segment for segment " << img_segmentation.first << " (" << img_segmentation.second.size() << " points) is " << best_overlap_id <<
+                 " (" << segment_map_[best_overlap_id].size() << " points) with an overlap of " << best_overlap << std::endl;
 
     // if we have enough overlap, keep the global label, otherwise propagate the label of the depth img
     if (best_overlap >= config_.min_segment_overlap && best_overlap_id != 0) {
@@ -352,7 +358,7 @@ LabelIndexMap SegmentedTsdfIntegrator::propagateSegmentLabels(const Labels& segm
       prop_idxs.insert(prop_idxs.end(), glob_idxs.begin(), glob_idxs.end());
 
     } else {
-      Labels& prop_idxs  = propagated_labels[max_label++];
+      Labels& prop_idxs  = propagated_labels[max_label_++];
       const Labels& img_idxs = img_segmentation.second;
 
       prop_idxs.insert(prop_idxs.end(), img_idxs.begin(), img_idxs.end());
