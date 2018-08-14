@@ -123,9 +123,9 @@ void SegmentedTsdfIntegrator::updateSegmentedVoxel(const VoxelIndex& global_voxe
   // Lookup the mutex that is responsible for this voxel and lock it
   std::lock_guard<std::mutex> lock(mutexes_.get(global_voxel_idx));
 
-  if (seg_voxel->segment_id == 0) {
+  if (seg_voxel->segment_id == 0 || seg_voxel->confidence == 0) {
     seg_voxel->segment_id = segment;
-    seg_voxel->confidence = 1;
+    seg_voxel->confidence = 0;
   } else if (seg_voxel->segment_id == segment) {
     seg_voxel->confidence++;
   } else {
