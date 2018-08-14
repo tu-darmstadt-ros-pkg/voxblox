@@ -9,11 +9,12 @@ Segmenter::Segmenter(const ros::NodeHandle& nh_private) :
   segmentation_pub_ = nh_private_.advertise<sensor_msgs::Image>("segmentation", 1, true);
   concave_edges_pub_ = nh_private_.advertise<sensor_msgs::Image>("concave_edges", 1, true);
   depth_disc_edges_pub_ = nh_private_.advertise<sensor_msgs::Image>("depth_disc_edges", 1, true);
+  rgb_edges_pub_ = nh_private_.advertise<sensor_msgs::Image>("rgb_edges", 1, true);
 
   initColorMap(256);
 
-  nh_private_.param("seg_canny_low_tresh", canny_low_tresh_, 80);
-  nh_private_.param("seg_canny_high_tresh", canny_high_tresh_, 240);
+  nh_private_.param("seg_canny_low_tresh", canny_low_tresh_, 50);
+  nh_private_.param("seg_canny_high_tresh", canny_high_tresh_, 150);
   nh_private_.param("seg_canny_kernel_size", canny_kernel_size_, 3);
   nh_private_.param("seg_min_concavity", min_concavity_, 0.97f);
   nh_private_.param("seg_max_dist_step_", max_dist_step_, 0.005f);
@@ -33,6 +34,7 @@ void Segmenter::segmentPointcloud(const pcl::PointCloud<pcl::PointXYZRGB>::Const
   pcl::PointCloud<pcl::Normal>::Ptr normals(new pcl::PointCloud<pcl::Normal>);
   cv::Mat edge_img_concave(height, width, CV_8UC1, cv::Scalar(0));
   cv::Mat edge_img_depth_disc(height, width, CV_8UC1, cv::Scalar(0));
+  cv::Mat edge_img_canny(height, width, CV_8UC1, cv::Scalar(0));
 
   timing::Timer seg_normal_estimation_timer("seg_normal_estimation");
 
@@ -54,26 +56,22 @@ void Segmenter::segmentPointcloud(const pcl::PointCloud<pcl::PointXYZRGB>::Const
   detectGeometricalBoundaries(cloud, normals, edge_img_depth_disc);
   seg_depth_disc_boundaries_timer.Stop();
 
-  /*pcl::io::PointCloudImageExtractorWithScaling<pcl::Boundary> extractor("boundary_point", 1);
-  pcl::PCLImage edge_image;
-  extractor.extract(*edge_map, edge_image);
-
-  pcl::io::savePNGFile ("/home/marius/edge_image.png", edge_image);
-  pcl::RGBPlaneCoefficientComparator<pcl::PointXYZ, pcl::Normal> c;*/
+  timing::Timer seg_canny_boundaries_timer("seg_canny_boundaries");
+  detectRgbBoundaries(cloud, edge_img_canny);
+  seg_canny_boundaries_timer.Stop();
 
   timing::Timer seg_connected_components_timer("seg_connected_components");
 
   cv::Mat edge_img = cv::min(edge_img_concave, edge_img_depth_disc);
+  edge_img = cv::min(edge_img, edge_img_canny);
 
-  cv::erode(edge_img, edge_img, cv::Mat(), cv::Point(-1,-1), 2);
-  cv::dilate(edge_img, edge_img, cv::Mat(), cv::Point(-1,-1), 1);
+  // increase the borders a little bit before the segmentation
+  cv::morphologyEx(edge_img, edge_img, cv::MORPH_OPEN, cv::Mat(), cv::Point(-1,-1), 1);
 
   cv::Mat labels;
   int num_labels = cv::connectedComponents (edge_img, labels, 8);
 
   ROS_INFO_STREAM("found " << num_labels << " labels!");
-  //cv::morphologyEx(labels, cv::MORPH_CLOSE, cv::Mat());
-  //cv::dilate(labels, labels, cv::Mat());
 
   seg_connected_components_timer.Stop();
 
@@ -103,9 +101,6 @@ void Segmenter::segmentPointcloud(const pcl::PointCloud<pcl::PointXYZRGB>::Const
   // Generate random colors
   std::vector<cv::Vec3b> colors;
 
-  //make sure the first segment is always black
-  //colors.push_back(cv::Vec3b(0, 0, 0));
-
   for (uint i = 0; i < 256; i++) {
     Color c = getSegmentColor(i);
     colors.push_back(cv::Vec3b(c.b, c.g, c.r));
@@ -118,6 +113,7 @@ void Segmenter::segmentPointcloud(const pcl::PointCloud<pcl::PointXYZRGB>::Const
   publishImg(edge_img_concave, pcl_conversions::fromPCL(cloud->header), concave_edges_pub_);
   publishImg(edge_img_depth_disc, pcl_conversions::fromPCL(cloud->header), depth_disc_edges_pub_);
   publishImg(labels, pcl_conversions::fromPCL(cloud->header), segmentation_pub_);
+  publishImg(edge_img_canny, pcl_conversions::fromPCL(cloud->header), rgb_edges_pub_);
 }
 
 void Segmenter::detectConcaveBoundaries(const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr cloud,
@@ -192,6 +188,35 @@ void Segmenter::detectGeometricalBoundaries(const pcl::PointCloud<pcl::PointXYZR
       }
     }
   }
+}
+
+void Segmenter::detectRgbBoundaries(const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr cloud,
+                                    cv::Mat& edge_img) {
+  int width = static_cast<int>(cloud->width);
+  int height = static_cast<int>(cloud->height);
+
+  // Create cv::Mat
+  cv::Mat rgb_img = cv::Mat(height, width, CV_8UC3);
+  cv::Mat gray_img = cv::Mat(height, width, CV_8UC1);
+
+  // pcl::PointCloud to cv::Mat
+  for(int y = 0; y < rgb_img.rows; y++) {
+    for(int x = 0; x < rgb_img.cols; x++) {
+      const pcl::PointXYZRGB& point = cloud->at(x, y);
+      rgb_img.at<cv::Vec3b>(y, x)[0] = point.b;
+      rgb_img.at<cv::Vec3b>(y, x)[1] = point.g;
+      rgb_img.at<cv::Vec3b>(y, x)[2] = point.r;
+    }
+  }
+
+  cv::cvtColor(rgb_img, gray_img, CV_BGR2GRAY);
+
+  // Reduce noise with blurring
+  cv::blur(gray_img, edge_img, cv::Size(3,3));
+
+  // Canny detector
+  cv::Canny(edge_img, edge_img, canny_low_tresh_, canny_high_tresh_, canny_kernel_size_);
+  cv::bitwise_not(edge_img, edge_img);
 }
 
 void Segmenter::getNeighbors(int row, int col, int height, int width, pcl::PointIndices& neighbors) {

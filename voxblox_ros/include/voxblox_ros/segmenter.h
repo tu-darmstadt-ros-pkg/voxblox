@@ -23,6 +23,7 @@
 
 #include <cv_bridge/cv_bridge.h>
 #include <opencv2/opencv.hpp>
+#include <opencv2/imgproc/imgproc.hpp>
 
 #include <voxblox/core/tsdf_map.h>
 #include <voxblox/integrator/tsdf_integrator.h>
@@ -36,7 +37,6 @@
 #include "voxblox_ros/ptcloud_vis.h"
 #include "voxblox_ros/transformer.h"
 
-#include <cv_bridge/cv_bridge.h>
 
 namespace voxblox {
 
@@ -50,6 +50,8 @@ class Segmenter {
 
   Color getSegmentColor(uint segment);
 
+  const std::map<uint, Color>& getColorMap() { return segment_colors_; }
+
  protected:
 
   void initColorMap(int num_entries);
@@ -62,6 +64,9 @@ class Segmenter {
 
   void detectGeometricalBoundaries(const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr cloud,
                            const pcl::PointCloud<pcl::Normal>::ConstPtr normals,
+                           cv::Mat& edge_img);
+
+  void detectRgbBoundaries(const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr cloud,
                            cv::Mat& edge_img);
 
   void getNeighbors(int row, int col, int height, int width, pcl::PointIndices& neighbors);
@@ -97,6 +102,7 @@ class Segmenter {
   ros::Publisher segmentation_pub_;
   ros::Publisher concave_edges_pub_;
   ros::Publisher depth_disc_edges_pub_;
+  ros::Publisher rgb_edges_pub_;
 
 };
 
