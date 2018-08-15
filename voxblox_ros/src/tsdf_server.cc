@@ -234,14 +234,6 @@ void TsdfServer::processPointCloudMessageAndInsert(
                tsdf_map_->getTsdfLayer().getNumberOfAllocatedBlocks());
     }
 
-    Labels segmentation;
-    LabelIndexMap segment_map;
-    segmenter_.segmentPointcloud(pointcloud_pcl, segmentation, segment_map);
-
-    timing::Timer seg_integrate_timer("seg_integrate_segmentation");
-    seg_tsdf_integrator_->integrateSegmentedPointCloud(T_G_C, points_C, segmentation, segment_map);
-    seg_integrate_timer.Stop();
-
     timing::Timer block_remove_timer("remove_distant_blocks");
     tsdf_map_->getTsdfLayerPtr()->removeDistantBlocks(
         T_G_C.getPosition(), max_block_distance_from_body_);
@@ -267,6 +259,7 @@ void TsdfServer::insertPointcloud(
 
   constexpr bool is_freespace_pointcloud = false;
   processPointCloudMessageAndInsert(pointcloud_msg, is_freespace_pointcloud);
+  integrateSegmentation(pointcloud_msg);
 
   if (publish_tsdf_info_) {
     publishAllUpdatedTsdfVoxels();
@@ -305,10 +298,57 @@ void TsdfServer::integratePointcloud(const Transformation& T_G_C,
                                         is_freespace_pointcloud);
 }
 
-void TsdfServer::integrateSegmentation(const Transformation& T_G_C,
-                                     const Pointcloud& ptcloud_C,
-                                     const Labels& segmentation) {
-  //tsdf_integrator_->integrateSegments(T_G_C, ptcloud_C, segmentation);
+void TsdfServer::integrateSegmentation(const sensor_msgs::PointCloud2::Ptr pointcloud_msg) {
+
+  // Look up transform from sensor frame to world frame.
+  Transformation T_G_C;
+  if (transformer_.lookupTransform(pointcloud_msg->header.frame_id,
+                                   world_frame_, pointcloud_msg->header.stamp,
+                                   &T_G_C)) {
+    // Convert the PCL pointcloud into our awesome format.
+    // TODO(helenol): improve...
+    // Horrible hack fix to fix color parsing colors in PCL.
+    for (size_t d = 0; d < pointcloud_msg->fields.size(); ++d) {
+      if (pointcloud_msg->fields[d].name == std::string("rgb")) {
+        pointcloud_msg->fields[d].datatype = sensor_msgs::PointField::FLOAT32;
+      }
+    }
+
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_pcl(new pcl::PointCloud<pcl::PointXYZRGB>);
+
+    // pointcloud_pcl is modified below:
+    pcl::fromROSMsg(*pointcloud_msg, *cloud_pcl);
+
+    pcl::UniformSampling<pcl::PointXYZRGB> uniform_sampling;
+    uniform_sampling.setInputCloud(cloud_pcl);
+    uniform_sampling.setRadiusSearch(tsdf_map_->voxel_size());
+    pcl::PointCloud<int> sub_cloud_indices;
+    uniform_sampling.compute(sub_cloud_indices);
+    std::cout << "Total points: " << cloud_pcl->points.size() << " Selected Points: " << sub_cloud_indices.points.size() << " "<< std::endl;
+
+    Pointcloud points_C;
+    points_C.reserve(sub_cloud_indices.size());
+    for (size_t i = 0; i < sub_cloud_indices.size(); ++i) {
+
+      const pcl::PointXYZRGB& p = cloud_pcl->points[sub_cloud_indices[i]];
+
+      if (!std::isfinite(p.x) ||
+          !std::isfinite(p.y) ||
+          !std::isfinite(p.z)) {
+        continue;
+      }
+
+      points_C.push_back(Point(p.x, p.y, p.z));
+    }
+
+    Labels segmentation;
+    LabelIndexMap segment_map;
+    segmenter_.segmentPointcloud(cloud_pcl, sub_cloud_indices, segmentation, segment_map);
+
+    timing::Timer seg_integrate_timer("seg_integrate_segmentation");
+    seg_tsdf_integrator_->integrateSegmentedPointCloud(T_G_C, points_C, segmentation, segment_map, segmenter_.getColorMap());
+    seg_integrate_timer.Stop();
+  }
 }
 
 void TsdfServer::publishAllUpdatedTsdfVoxels() {

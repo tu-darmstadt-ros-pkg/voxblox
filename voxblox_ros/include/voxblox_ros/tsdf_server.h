@@ -17,6 +17,7 @@
 #include <cv_bridge/cv_bridge.h>
 #include <opencv2/opencv.hpp>
 #include <pcl/visualization/cloud_viewer.h>
+#include <pcl/keypoints/uniform_sampling.h>
 
 #include <voxblox/core/tsdf_map.h>
 #include <voxblox/core/seg_tsdf_map.h>
@@ -62,9 +63,7 @@ class TsdfServer {
                            const Pointcloud& ptcloud_C, const Colors& colors,
                            const bool is_freespace_pointcloud = false);
 
-  void integrateSegmentation(const Transformation& T_G_C,
-                             const Pointcloud& ptcloud_C,
-                             const Labels& segmentation);
+  void integrateSegmentation(const sensor_msgs::PointCloud2::Ptr pointcloud_msg);
 
   virtual void newPoseCallback(const Transformation& /*new_pose*/) {
     // Do nothing.

@@ -11,7 +11,7 @@ Segmenter::Segmenter(const ros::NodeHandle& nh_private) :
   depth_disc_edges_pub_ = nh_private_.advertise<sensor_msgs::Image>("depth_disc_edges", 1, true);
   rgb_edges_pub_ = nh_private_.advertise<sensor_msgs::Image>("rgb_edges", 1, true);
 
-  initColorMap(256);
+  initColorMap(255);
 
   nh_private_.param("seg_canny_low_tresh", canny_low_tresh_, 50);
   nh_private_.param("seg_canny_high_tresh", canny_high_tresh_, 150);
@@ -20,7 +20,8 @@ Segmenter::Segmenter(const ros::NodeHandle& nh_private) :
   nh_private_.param("seg_max_dist_step_", max_dist_step_, 0.005f);
 }
 
-void Segmenter::segmentPointcloud(const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr cloud, Labels& segments, LabelIndexMap& segment_map) {
+void Segmenter::segmentPointcloud(const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr cloud, const pcl::PointCloud<int>& sub_cloud_indices,
+                                  Labels& segments, LabelIndexMap& segment_map) {
 
   if (cloud->points.empty())
     return;
@@ -69,7 +70,7 @@ void Segmenter::segmentPointcloud(const pcl::PointCloud<pcl::PointXYZRGB>::Const
   cv::morphologyEx(edge_img, edge_img, cv::MORPH_OPEN, cv::Mat(), cv::Point(-1,-1), 1);
 
   cv::Mat labels;
-  int num_labels = cv::connectedComponents (edge_img, labels, 8);
+  int num_labels = cv::connectedComponents(edge_img, labels, 8);
 
   ROS_INFO_STREAM("found " << num_labels << " labels!");
 
@@ -77,23 +78,24 @@ void Segmenter::segmentPointcloud(const pcl::PointCloud<pcl::PointXYZRGB>::Const
 
   labels.convertTo(labels, CV_8U);
 
-  segments.reserve(cloud->size());
+  segments.reserve(sub_cloud_indices.size());
 
-  int index = 0;
+  for (size_t i = 0; i < sub_cloud_indices.size(); ++i) {
 
-  for (int row = 0; row < height; row++) {
-    for (int col = 0; col < width; col++) {
+    int sub_cloud_index = sub_cloud_indices[i];
+    const pcl::PointXYZRGB& p = cloud->points[sub_cloud_index];
 
-      if (!std::isfinite(cloud->at(col, row).x) ||
-          !std::isfinite(cloud->at(col, row).y) ||
-          !std::isfinite(cloud->at(col, row).z)) {
-        continue;
-      }
-
-      segments.push_back(labels.at<uchar>(row, col));
-      segment_map[labels.at<uchar>(row, col)].emplace_back(index);
-      index++;
+    if (!std::isfinite(p.x) ||
+        !std::isfinite(p.y) ||
+        !std::isfinite(p.z)) {
+      continue;
     }
+
+    int col = sub_cloud_index % width;
+    int row = sub_cloud_index / width;
+
+    segments.push_back(labels.at<uchar>(row, col));
+    segment_map[labels.at<uchar>(row, col)].emplace_back(i);
   }
 
   cv::cvtColor(labels, labels, CV_GRAY2BGR);

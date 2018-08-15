@@ -62,7 +62,8 @@ class SegmentedTsdfIntegrator {
   void integrateSegmentedPointCloud(const Transformation& T_G_C,
                            const Pointcloud& points_C,
                            const Labels& segmentation,
-                           const LabelIndexMap& segment_map);
+                           const LabelIndexMap& segment_map,
+                           const std::map<uint, Color>& color_map);
 
   // Returns a CONST ref of the config.
   const Config& getConfig() const { return config_; }

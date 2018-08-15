@@ -157,7 +157,8 @@ float SegmentedTsdfIntegrator::computeDistance(const Point& origin,
 void SegmentedTsdfIntegrator::integrateSegmentedPointCloud(const Transformation& T_G_C,
                                                   const Pointcloud& points_C,
                                                   const Labels& segmentation,
-                                                  const LabelIndexMap& segment_map) {
+                                                  const LabelIndexMap& segment_map,
+                                                  const std::map<uint, Color>& color_map) {
 
   timing::Timer seg_get_visible_voxels_timer("seg_get_visible_voxels");
 
@@ -285,6 +286,9 @@ void SegmentedTsdfIntegrator::getVisibleVoxels(const Transformation& T_G_C,
 
       const TsdfVoxel* tsdf_voxel = tsdf_layer_->getVoxelPtrByGlobalIndex(global_voxel_idx);
 
+      if (!tsdf_voxel)
+        continue;
+
       // ignore invalid voxels
       if (tsdf_voxel->weight < 1e-6f) {
         continue;
@@ -391,7 +395,7 @@ float SegmentedTsdfIntegrator::computeSegmentOverlap(Labels& segment1, Labels& s
                         segment2.begin(), segment2.end(),
                         std::back_inserter(intersection_indices));
 
-  return static_cast<float>(intersection_indices.size()) / static_cast<float>(segment1.size());
+  return static_cast<float>(intersection_indices.size()) / static_cast<float>(segment2.size());
 }
 
 void SegmentedTsdfIntegrator::checkMergeCandidates(LabelIndexMap& propagated_labels) {
