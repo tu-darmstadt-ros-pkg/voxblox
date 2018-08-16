@@ -15,6 +15,7 @@
   <buildtool_depend>catkin</buildtool_depend>
   <buildtool_depend>catkin_simple</buildtool_depend>
 
+  <depend>cv_bridge</depend>
   <depend>gflags_catkin</depend>
   <depend>interactive_markers</depend>
   <depend>minkindr_conversions</depend>
@@ -22,7 +23,6 @@
   <depend>pcl_ros</depend>
   <depend>sensor_msgs</depend>
   <depend>tf</depend>
-  <depend>cv_bridge</depend>
 
   <depend>voxblox</depend>
   <depend>voxblox_msgs</depend>

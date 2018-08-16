@@ -85,7 +85,7 @@ class SegmentedTsdfIntegrator {
   // mutex allowing it to grow during integration.
   // These temporary blocks can be merged into the layer later by calling
   // updateLayerWithStoredBlocks()
-  SegmentedVoxel* allocateStorageAndGetVoxelPtr(const VoxelIndex& global_voxel_idx,
+  SegmentedVoxel* allocateStorageAndGetVoxelPtr(const GlobalIndex& global_voxel_idx,
                                            Block<SegmentedVoxel>::Ptr* last_block,
                                            BlockIndex* last_block_idx);
 
@@ -93,7 +93,7 @@ class SegmentedTsdfIntegrator {
   void updateLayerWithStoredBlocks();
 
   // Updates seg_voxel. Thread safe.
-  void updateSegmentedVoxel(const VoxelIndex& global_voxel_index, const Label& segment);
+  void updateSegmentedVoxel(const GlobalIndex& global_voxel_index, const Label& segment);
 
   // Thread safe.
   float computeDistance(const Point& origin, const Point& point_G,
@@ -147,7 +147,7 @@ class SegmentedTsdfIntegrator {
   // the voxels hash. Assuming a uniform hash distribution, this means the
   // chance of two threads needing the same lock for unrelated voxels is
   // (num_threads / (2^n)). For 8 threads and 12 bits this gives 0.2%.
-  ApproxHashArray<12, std::mutex> mutexes_;
+  ApproxHashArray<12, std::mutex, GlobalIndex, LongIndexHash> mutexes_;
 
   CameraModel depth_cam_model_;
 
@@ -179,12 +179,14 @@ private:
  // Voxel start locations are added to this set before ray casting. The ray
  // casting only occurs if no ray has been cast from this location for this
  // scan.
- ApproxHashSet<masked_bits_, full_reset_threshold> start_voxel_approx_set_;
+ ApproxHashSet<masked_bits_, full_reset_threshold, GlobalIndex, LongIndexHash>
+     start_voxel_approx_set_;
  // This set records which voxels a scans rays have passed through. If a ray
  // moves through max_consecutive_ray_collisions voxels in a row that have
  // already been seen this scan, it is deemed to be adding no new information
  // and the casting stops.
- ApproxHashSet<masked_bits_, full_reset_threshold> voxel_observed_approx_set_;
+ ApproxHashSet<masked_bits_, full_reset_threshold, GlobalIndex, LongIndexHash>
+     voxel_observed_approx_set_;
 
  // Used in terminating the integration early if it exceeds a time limit.
  std::chrono::time_point<std::chrono::steady_clock> integration_start_time_;

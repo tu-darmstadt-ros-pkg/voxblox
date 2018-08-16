@@ -56,7 +56,7 @@ inline bool SegmentedTsdfIntegrator::isPointValid(const Point& point_C) const {
 // These temporary blocks can be merged into the layer later by calling
 // updateLayerWithStoredBlocks()
 SegmentedVoxel* SegmentedTsdfIntegrator::allocateStorageAndGetVoxelPtr(
-    const VoxelIndex& global_voxel_idx, Block<SegmentedVoxel>::Ptr* last_block,
+    const GlobalIndex& global_voxel_idx, Block<SegmentedVoxel>::Ptr* last_block,
     BlockIndex* last_block_idx) {
   DCHECK(last_block != nullptr);
   DCHECK(last_block_idx != nullptr);
@@ -112,7 +112,7 @@ void SegmentedTsdfIntegrator::updateLayerWithStoredBlocks() {
 }
 
 // Updates segmented voxel. Thread safe.
-void SegmentedTsdfIntegrator::updateSegmentedVoxel(const VoxelIndex& global_voxel_idx,
+void SegmentedTsdfIntegrator::updateSegmentedVoxel(const GlobalIndex& global_voxel_idx,
                                                    const Label& segment) {
 
   SegmentedVoxel* seg_voxel = segmentation_layer_->getVoxelPtrByGlobalIndex(global_voxel_idx);
@@ -249,8 +249,9 @@ void SegmentedTsdfIntegrator::getVisibleVoxels(const Transformation& T_G_C,
     // this location. If it has then we skip ray casting this point. We measure
     // if a start location is 'close' to another points by inserting the point
     // into a set of voxels. This voxel set has a resolution
-    // start_voxel_subsampling_factor times higher then the voxel size.
-    AnyIndex global_voxel_idx = getGridIndexFromPoint(
+    // start_voxel_subsampling_factor times higher then the voxel size.    
+    GlobalIndex global_voxel_idx;
+    global_voxel_idx = getGridIndexFromPoint<GlobalIndex>(
         point_G, config_.start_voxel_subsampling_factor * voxel_size_inv_);
     if (!start_voxel_approx_set_.replaceHash(global_voxel_idx)) {
       continue;
@@ -267,7 +268,7 @@ void SegmentedTsdfIntegrator::getVisibleVoxels(const Transformation& T_G_C,
     Block<SegmentedVoxel>::Ptr block = nullptr;
     BlockIndex block_idx;
 
-    VoxelIndex best_voxel_idx;
+    GlobalIndex best_voxel_idx;
     float min_sdf = std::numeric_limits<float>::max();
 
     while (ray_caster.nextRayIndex(&global_voxel_idx)) {

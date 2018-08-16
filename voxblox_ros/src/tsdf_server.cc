@@ -4,12 +4,6 @@
 
 namespace voxblox {
 
-TsdfServer::TsdfServer(const ros::NodeHandle& nh,
-                       const ros::NodeHandle& nh_private)
-    : TsdfServer(nh, nh_private, getTsdfMapConfigFromRosParam(nh_private),
-                 getTsdfIntegratorConfigFromRosParam(nh_private),
-                 getSegTsdfIntegratorConfigFromRosParam(nh_private)) {}
-
 void TsdfServer::getServerConfigFromRosParam(
     const ros::NodeHandle& nh_private) {
   // Before subscribing, determine minimum time between messages.
@@ -26,6 +20,8 @@ void TsdfServer::getServerConfigFromRosParam(
   nh_private.param("world_frame", world_frame_, world_frame_);
   nh_private.param("publish_tsdf_info", publish_tsdf_info_, publish_tsdf_info_);
   nh_private.param("publish_slices", publish_slices_, publish_slices_);
+  nh_private.param("publish_pointclouds", publish_pointclouds_,
+                   publish_pointclouds_);
 
   nh_private.param("use_freespace_pointcloud", use_freespace_pointcloud_,
                    use_freespace_pointcloud_);
@@ -57,6 +53,12 @@ void TsdfServer::getServerConfigFromRosParam(
 }
 
 TsdfServer::TsdfServer(const ros::NodeHandle& nh,
+                       const ros::NodeHandle& nh_private)
+    : TsdfServer(nh, nh_private, getTsdfMapConfigFromRosParam(nh_private),
+                 getTsdfIntegratorConfigFromRosParam(nh_private),
+                 getSegTsdfIntegratorConfigFromRosParam(nh_private)) {}
+
+TsdfServer::TsdfServer(const ros::NodeHandle& nh,
                        const ros::NodeHandle& nh_private,
                        const TsdfMap::Config& config,
                        const TsdfIntegratorBase::Config& integrator_config,
@@ -70,7 +72,9 @@ TsdfServer::TsdfServer(const ros::NodeHandle& nh,
       use_freespace_pointcloud_(false),
       publish_tsdf_info_(false),
       publish_slices_(false),
+      publish_pointclouds_(false),
       publish_tsdf_map_(false),
+      cache_mesh_(false),
       pointcloud_queue_size_(1),
       transformer_(nh, nh_private),
       segmenter_(nh_private) {
@@ -180,72 +184,66 @@ TsdfServer::TsdfServer(const ros::NodeHandle& nh,
 
 void TsdfServer::processPointCloudMessageAndInsert(
     const sensor_msgs::PointCloud2::Ptr& pointcloud_msg,
-    const bool is_freespace_pointcloud) {
-  // Look up transform from sensor frame to world frame.
-  Transformation T_G_C;
-  if (transformer_.lookupTransform(pointcloud_msg->header.frame_id,
-                                   world_frame_, pointcloud_msg->header.stamp,
-                                   &T_G_C)) {
-    // Convert the PCL pointcloud into our awesome format.
-    // TODO(helenol): improve...
-    // Horrible hack fix to fix color parsing colors in PCL.
-    for (size_t d = 0; d < pointcloud_msg->fields.size(); ++d) {
-      if (pointcloud_msg->fields[d].name == std::string("rgb")) {
-        pointcloud_msg->fields[d].datatype = sensor_msgs::PointField::FLOAT32;
-      }
+    const Transformation& T_G_C, const bool is_freespace_pointcloud) {
+  // Convert the PCL pointcloud into our awesome format.
+  // TODO(helenol): improve...
+  // Horrible hack fix to fix color parsing colors in PCL.
+  for (size_t d = 0; d < pointcloud_msg->fields.size(); ++d) {
+    if (pointcloud_msg->fields[d].name == std::string("rgb")) {
+      pointcloud_msg->fields[d].datatype = sensor_msgs::PointField::FLOAT32;
+    }
+  }
+
+  pcl::PointCloud<pcl::PointXYZRGB> pointcloud_pcl;
+  // pointcloud_pcl is modified below:
+  pcl::fromROSMsg(*pointcloud_msg, pointcloud_pcl);
+
+  timing::Timer ptcloud_timer("ptcloud_preprocess");
+
+  Pointcloud points_C;
+  Colors colors;
+  points_C.reserve(pointcloud_pcl.size());
+  colors.reserve(pointcloud_pcl.size());
+  for (size_t i = 0; i < pointcloud_pcl.points.size(); ++i) {
+    if (!std::isfinite(pointcloud_pcl.points[i].x) ||
+        !std::isfinite(pointcloud_pcl.points[i].y) ||
+        !std::isfinite(pointcloud_pcl.points[i].z)) {
+      continue;
     }
 
-    pcl::PointCloud<pcl::PointXYZRGB>::Ptr pointcloud_pcl(new pcl::PointCloud<pcl::PointXYZRGB>);;
-    // pointcloud_pcl is modified below:
-    pcl::fromROSMsg(*pointcloud_msg, *pointcloud_pcl);
+    points_C.push_back(Point(pointcloud_pcl.points[i].x,
+                             pointcloud_pcl.points[i].y,
+                             pointcloud_pcl.points[i].z));
+    colors.push_back(
+        Color(pointcloud_pcl.points[i].r, pointcloud_pcl.points[i].g,
+              pointcloud_pcl.points[i].b, pointcloud_pcl.points[i].a));
+  }
 
-    timing::Timer ptcloud_timer("ptcloud_preprocess");
+  ptcloud_timer.Stop();
 
-    Pointcloud points_C;
-    Colors colors;
-    points_C.reserve(pointcloud_pcl->size());
-    colors.reserve(pointcloud_pcl->size());
-    for (size_t i = 0; i < pointcloud_pcl->points.size(); ++i) {
-      if (!std::isfinite(pointcloud_pcl->points[i].x) ||
-          !std::isfinite(pointcloud_pcl->points[i].y) ||
-          !std::isfinite(pointcloud_pcl->points[i].z)) {
-        continue;
-      }
+  if (verbose_) {
+    ROS_INFO("Integrating a pointcloud with %lu points.", points_C.size());
+  }
+  ros::WallTime start = ros::WallTime::now();
+  integratePointcloud(T_G_C, points_C, colors, is_freespace_pointcloud);
+  ros::WallTime end = ros::WallTime::now();
+  if (verbose_) {
+    ROS_INFO("Finished integrating in %f seconds, have %lu blocks.",
+             (end - start).toSec(),
+             tsdf_map_->getTsdfLayer().getNumberOfAllocatedBlocks());
+  }
 
-      points_C.push_back(Point(pointcloud_pcl->points[i].x,
-                               pointcloud_pcl->points[i].y,
-                               pointcloud_pcl->points[i].z));
-      colors.push_back(
-          Color(pointcloud_pcl->points[i].r, pointcloud_pcl->points[i].g,
-                pointcloud_pcl->points[i].b, pointcloud_pcl->points[i].a));
-    }
-
-    ptcloud_timer.Stop();
-
-    if (verbose_) {
-      ROS_INFO("Integrating a pointcloud with %lu points.", points_C.size());
-    }
-    ros::WallTime start = ros::WallTime::now();
-    integratePointcloud(T_G_C, points_C, colors, is_freespace_pointcloud);
-    ros::WallTime end = ros::WallTime::now();
-    if (verbose_) {
-      ROS_INFO("Finished integrating in %f seconds, have %lu blocks.",
-               (end - start).toSec(),
-               tsdf_map_->getTsdfLayer().getNumberOfAllocatedBlocks());
-    }
-
-    timing::Timer block_remove_timer("remove_distant_blocks");
-    tsdf_map_->getTsdfLayerPtr()->removeDistantBlocks(
-        T_G_C.getPosition(), max_block_distance_from_body_);
-    mesh_layer_->clearDistantMesh(T_G_C.getPosition(),
-                                 max_block_distance_from_body_);
+  timing::Timer block_remove_timer("remove_distant_blocks");
+  tsdf_map_->getTsdfLayerPtr()->removeDistantBlocks(
+      T_G_C.getPosition(), max_block_distance_from_body_);
+  mesh_layer_->clearDistantMesh(T_G_C.getPosition(),
+                                max_block_distance_from_body_);
     seg_tsdf_map_->getTsdfLayerPtr()->removeDistantBlocks(
         T_G_C.getPosition(), max_block_distance_from_body_);
-    block_remove_timer.Stop();
+  block_remove_timer.Stop();
 
-    // Callback for inheriting classes.
-    newPoseCallback(T_G_C);
-  }
+  // Callback for inheriting classes.
+  newPoseCallback(T_G_C);
 }
 
 void TsdfServer::insertPointcloud(
@@ -258,8 +256,15 @@ void TsdfServer::insertPointcloud(
   last_msg_time = pointcloud_msg->header.stamp;
 
   constexpr bool is_freespace_pointcloud = false;
-  processPointCloudMessageAndInsert(pointcloud_msg, is_freespace_pointcloud);
-  integrateSegmentation(pointcloud_msg);
+  Transformation T_G_C;
+  if (transformer_.lookupTransform(pointcloud_msg->header.frame_id,
+                                   world_frame_, pointcloud_msg->header.stamp,
+                                   &T_G_C)) {
+    processPointCloudMessageAndInsert(pointcloud_msg, T_G_C,
+                                      is_freespace_pointcloud);
+  } else {
+    ROS_WARN_THROTTLE(60, "Couldn't look up pose for incoming pointcloud.");
+  }
 
   if (publish_tsdf_info_) {
     publishAllUpdatedTsdfVoxels();
@@ -287,7 +292,15 @@ void TsdfServer::insertFreespacePointcloud(
   last_msg_time = pointcloud_msg->header.stamp;
 
   constexpr bool is_freespace_pointcloud = true;
-  processPointCloudMessageAndInsert(pointcloud_msg, is_freespace_pointcloud);
+  Transformation T_G_C;
+  if (transformer_.lookupTransform(pointcloud_msg->header.frame_id,
+                                   world_frame_, pointcloud_msg->header.stamp,
+                                   &T_G_C)) {
+    processPointCloudMessageAndInsert(pointcloud_msg, T_G_C,
+                                      is_freespace_pointcloud);
+  } else {
+    ROS_WARN_THROTTLE(60, "Couldn't look up pose for incoming pointcloud.");
+  }
 }
 
 void TsdfServer::integratePointcloud(const Transformation& T_G_C,
@@ -433,7 +446,14 @@ void TsdfServer::updateMesh() {
   generateVoxbloxMeshMsg(mesh_layer_, color_mode_, &mesh_msg);
   mesh_msg.header.frame_id = world_frame_;
   mesh_pub_.publish(mesh_msg);
+  if (cache_mesh_) {
+    cached_mesh_msg_ = mesh_msg;
+  }
   publish_mesh_timer.Stop();
+
+  if (publish_pointclouds_) {
+    publishPointclouds();
+  }
 
   if (publish_tsdf_map_ && tsdf_map_pub_.getNumSubscribers() > 0u) {
     constexpr bool only_publish_updated_blocks = false;
@@ -491,9 +511,13 @@ bool TsdfServer::loadMap(const std::string& file_path) {
   // Inheriting classes should add other layers to load, as this will only load
   // the TSDF layer.
   constexpr bool kMulitpleLayerSupport = true;
-  return io::LoadBlocksFromFile(
+  bool success = io::LoadBlocksFromFile(
       file_path, Layer<TsdfVoxel>::BlockMergingStrategy::kReplace,
       kMulitpleLayerSupport, tsdf_map_->getTsdfLayerPtr());
+  if (success) {
+    LOG(INFO) << "Successfully loaded TSDF layer.";
+  }
+  return success;
 }
 
 bool TsdfServer::clearMapCallback(
@@ -518,7 +542,8 @@ bool TsdfServer::saveMapCallback(
 bool TsdfServer::loadMapCallback(
     voxblox_msgs::FilePath::Request& request,
     voxblox_msgs::FilePath::Response& /*response*/) {  // NOLINT
-  return loadMap(request.file_path);
+  bool success = loadMap(request.file_path);
+  return success;
 }
 
 bool TsdfServer::publishPointcloudsCallback(
