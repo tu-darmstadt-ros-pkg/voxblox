@@ -63,7 +63,7 @@ class TsdfServer {
                            const Pointcloud& ptcloud_C, const Colors& colors,
                            const bool is_freespace_pointcloud = false);
 
-  void integrateSegmentation(const sensor_msgs::PointCloud2::Ptr pointcloud_msg);
+  void integrateSegmentation(const sensor_msgs::PointCloud2::Ptr pointcloud_msg, const Transformation& T_G_C);
 
   virtual void newPoseCallback(const Transformation& /*new_pose*/) {
     // Do nothing.
