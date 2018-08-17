@@ -81,36 +81,19 @@ inline SegmentedTsdfIntegrator::Config getSegTsdfIntegratorConfigFromRosParam(
     const ros::NodeHandle& nh_private) {
   SegmentedTsdfIntegrator::Config integrator_config;
 
-  const TsdfMap::Config tsdf_config = getTsdfMapConfigFromRosParam(nh_private);
-  integrator_config.default_truncation_distance =
-      tsdf_config.tsdf_voxel_size * 2;
-
-  double truncation_distance = integrator_config.default_truncation_distance;
-  nh_private.param("truncation_distance", truncation_distance,
-                   truncation_distance);
   nh_private.param("max_ray_length_m", integrator_config.max_ray_length_m,
                    integrator_config.max_ray_length_m);
   nh_private.param("min_ray_length_m", integrator_config.min_ray_length_m,
                    integrator_config.min_ray_length_m);
-  nh_private.param("start_voxel_subsampling_factor",
-                   integrator_config.start_voxel_subsampling_factor,
-                   integrator_config.start_voxel_subsampling_factor);
-  nh_private.param("max_consecutive_ray_collisions",
-                   integrator_config.max_consecutive_ray_collisions,
-                   integrator_config.max_consecutive_ray_collisions);
-  nh_private.param("clear_checks_every_n_frames",
-                   integrator_config.clear_checks_every_n_frames,
-                   integrator_config.clear_checks_every_n_frames);
-  nh_private.param("max_integration_time_s",
-                   integrator_config.max_integration_time_s,
-                   integrator_config.max_integration_time_s);
-
   nh_private.param("min_segment_overlap",
                    integrator_config.min_segment_overlap,
                    integrator_config.min_segment_overlap);
   nh_private.param("min_segment_merge_overlap",
                    integrator_config.min_segment_merge_overlap,
                    integrator_config.min_segment_merge_overlap);
+  nh_private.param("seg_voxel_prop_radius",
+                   integrator_config.voxel_prop_radius,
+                   integrator_config.voxel_prop_radius);
 
   int min_segment_pixel_size = static_cast<int>(integrator_config.min_segment_pixel_size);
   int min_merge_confidence = static_cast<int>(integrator_config.min_merge_confidence);
@@ -127,9 +110,6 @@ inline SegmentedTsdfIntegrator::Config getSegTsdfIntegratorConfigFromRosParam(
 
   if (min_merge_confidence >= 0)
     integrator_config.min_merge_confidence = static_cast<LabelConfidence>(min_merge_confidence);
-
-  integrator_config.default_truncation_distance =
-      static_cast<float>(truncation_distance);
 
   return integrator_config;
 }

@@ -52,7 +52,7 @@ typedef AnyIndex SignedIndex;
 
 typedef Eigen::Matrix<LongIndexElement, 3, 1> LongIndex;
 typedef LongIndex GlobalIndex;
-
+typedef AlignedVector<LongIndex> GlobalIndexList;
 typedef std::pair<BlockIndex, VoxelIndex> VoxelKey;
 
 typedef AlignedVector<AnyIndex> IndexVector;
@@ -84,7 +84,7 @@ typedef AlignedVector<Color> Colors;
 typedef AlignedVector<Label> Labels;
 
 typedef std::unordered_map<Label, Labels> LabelIndexMap;
-typedef std::unordered_map<Label, GlobalIndex> VoxelIndexMap;
+typedef std::unordered_map<Label, GlobalIndexList> VoxelIndexMap;
 typedef std::unordered_map<Label, BlockIndexSet> LabelBlockIndexesMap;
 
 struct PairHash {

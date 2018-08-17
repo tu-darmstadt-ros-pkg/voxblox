@@ -46,60 +46,6 @@ inline bool SegmentedTsdfIntegrator::isPointValid(const Point& point_C) const {
   }
 }
 
-// Will return a pointer to a voxel located at global_voxel_idx in the seg_tsdf
-// layer. Thread safe.
-// Takes in the last_block_idx and last_block to prevent unneeded map lookups.
-// If the block this voxel would be in has not been allocated, a block in
-// temp_block_map_ is created/accessed and a voxel from this map is returned
-// instead. Unlike the layer, accessing temp_block_map_ is controlled via a
-// mutex allowing it to grow during integration.
-// These temporary blocks can be merged into the layer later by calling
-// updateLayerWithStoredBlocks()
-SegmentedVoxel* SegmentedTsdfIntegrator::allocateStorageAndGetVoxelPtr(
-    const GlobalIndex& global_voxel_idx, Block<SegmentedVoxel>::Ptr* last_block,
-    BlockIndex* last_block_idx) {
-  DCHECK(last_block != nullptr);
-  DCHECK(last_block_idx != nullptr);
-
-  const BlockIndex block_idx =
-      getBlockIndexFromGlobalVoxelIndex(global_voxel_idx, voxels_per_side_inv_);
-
-  if ((block_idx != *last_block_idx) || (*last_block == nullptr)) {
-    *last_block = segmentation_layer_->getBlockPtrByIndex(block_idx);
-    *last_block_idx = block_idx;
-  }
-
-  // If no block at this location currently exists, we allocate a temporary
-  // voxel that will be merged into the map later
-  if (*last_block == nullptr) {
-    // To allow temp_block_map_ to grow we can only let one thread in at once
-    std::lock_guard<std::mutex> lock(temp_block_mutex_);
-
-    typename Layer<SegmentedVoxel>::BlockHashMap::iterator it =
-        temp_block_map_.find(block_idx);
-    if (it != temp_block_map_.end()) {
-      *last_block = it->second;
-    } else {
-      auto insert_status = temp_block_map_.emplace(
-          block_idx, std::make_shared<Block<SegmentedVoxel>>(
-                         voxels_per_side_, voxel_size_,
-                         getOriginPointFromGridIndex(block_idx, block_size_)));
-
-      DCHECK(insert_status.second) << "Block already exists when allocating at "
-                                   << block_idx.transpose();
-
-      *last_block = insert_status.first->second;
-    }
-  }
-
-  (*last_block)->updated() = true;
-
-  const VoxelIndex local_voxel_idx =
-      getLocalFromGlobalVoxelIndex(global_voxel_idx, voxels_per_side_);
-
-  return &((*last_block)->getVoxelByVoxelIndex(local_voxel_idx));
-}
-
 // NOT thread safe
 void SegmentedTsdfIntegrator::updateLayerWithStoredBlocks() {
 
@@ -119,9 +65,6 @@ void SegmentedTsdfIntegrator::updateSegmentedVoxel(const GlobalIndex& global_vox
 
   if (seg_voxel == nullptr)
     return;
-
-  // Lookup the mutex that is responsible for this voxel and lock it
-  std::lock_guard<std::mutex> lock(mutexes_.get(global_voxel_idx));
 
   if (seg_voxel->segment_id == 0 || seg_voxel->confidence == 0) {
     seg_voxel->segment_id = segment;
@@ -166,15 +109,6 @@ void SegmentedTsdfIntegrator::integrateSegmentedPointCloud(const Transformation&
 
   visible_voxels_.clear();
   segment_map_.clear();
-
-  integration_start_time_ = std::chrono::steady_clock::now();
-
-  static int64_t reset_counter = 0;
-  if ((++reset_counter) >= config_.clear_checks_every_n_frames) {
-    reset_counter = 0;
-    start_voxel_approx_set_.resetApproxSet();
-    voxel_observed_approx_set_.resetApproxSet();
-  }
 
   ThreadSafeIndex index_getter(points_C.size());
 
@@ -234,86 +168,73 @@ void SegmentedTsdfIntegrator::getVisibleVoxels(const Transformation& T_G_C,
 
   DCHECK(index_getter != nullptr);
 
-  size_t point_idx;
-  while (index_getter->getNextIndex(&point_idx)) {
-    const Point& point_C = points_C[point_idx];
+  const Point& origin = T_G_C.getPosition();
+  const FloatingPoint max_distance = config_.max_ray_length_m;
 
-    bool is_clearing = false;
+
+  for (size_t i = 0; i < points_C.size(); ++i) {
+    Point surface_intersection = Point::Zero();
+
+    const Point& point_C = points_C[i];
+
     if (!isPointValid(point_C)) {
       continue;
     }
 
-    const Point origin = T_G_C.getPosition();
     const Point point_G = T_G_C * point_C;
-    // Checks to see if another ray in this scan has already started 'close' to
-    // this location. If it has then we skip ray casting this point. We measure
-    // if a start location is 'close' to another points by inserting the point
-    // into a set of voxels. This voxel set has a resolution
-    // start_voxel_subsampling_factor times higher then the voxel size.    
-    GlobalIndex global_voxel_idx;
-    global_voxel_idx = getGridIndexFromPoint<GlobalIndex>(
-        point_G, config_.start_voxel_subsampling_factor * voxel_size_inv_);
-    if (!start_voxel_approx_set_.replaceHash(global_voxel_idx)) {
+
+    Point direction = (point_G - origin).normalized();
+    // Cast ray from the origin in sensor ray direction until
+    // finding an intersection with a surface.
+    bool success = getSurfaceDistanceAlongRay<TsdfVoxel>(*tsdf_layer_, origin, direction,
+                                                         max_distance, &surface_intersection);
+
+    if (!success) {
       continue;
     }
 
-    constexpr bool cast_from_origin = true;
-    RayCaster ray_caster(origin, point_G, is_clearing,
-                         false,
-                         config_.max_ray_length_m, voxel_size_inv_,
-                         config_.default_truncation_distance, cast_from_origin);
+    BlockIndex block_idx = segmentation_layer_->computeBlockIndexFromCoordinates(surface_intersection);
+    Block<SegmentedVoxel>::Ptr block_ptr =
+        segmentation_layer_->allocateBlockPtrByIndex(block_idx);
 
-    int64_t consecutive_ray_collisions = 0;
+    GlobalIndex global_voxel_idx =
+        getGridIndexFromPoint<GlobalIndex>(surface_intersection, voxel_size_inv_);
 
-    Block<SegmentedVoxel>::Ptr block = nullptr;
-    BlockIndex block_idx;
-
-    GlobalIndex best_voxel_idx;
-    float min_sdf = std::numeric_limits<float>::max();
-
-    while (ray_caster.nextRayIndex(&global_voxel_idx)) {
-      // Check if the current voxel has been seen by any ray cast this scan. If
-      // it has increment the consecutive_ray_collisions counter, otherwise
-      // reset it. If the counter reaches a threshold we stop casting as the ray
-      // is deemed to be contributing too little new information.
-      if (!voxel_observed_approx_set_.replaceHash(global_voxel_idx)) {
-        ++consecutive_ray_collisions;
-      } else {
-        consecutive_ray_collisions = 0;
-      }
-      if (consecutive_ray_collisions > config_.max_consecutive_ray_collisions) {
-        break;
-      }
-
-      const TsdfVoxel* tsdf_voxel = tsdf_layer_->getVoxelPtrByGlobalIndex(global_voxel_idx);
-
-      if (!tsdf_voxel)
-        continue;
-
-      // ignore invalid voxels
-      if (tsdf_voxel->weight < 1e-6f) {
-        continue;
-      }
-
-      // get the voxel closest to the surface for each ray
-      if (std::abs(tsdf_voxel->distance) < min_sdf) {
-        min_sdf = std::abs(tsdf_voxel->distance);
-        best_voxel_idx = global_voxel_idx;
-      }
-    }
-
-    SegmentedVoxel* voxel = allocateStorageAndGetVoxelPtr(best_voxel_idx, &block, &block_idx);
+    SegmentedVoxel* voxel = segmentation_layer_->getVoxelPtrByGlobalIndex(global_voxel_idx);
 
     if (voxel == nullptr)
     {
-      std::cout << "[getVisibleVoxels] could not find voxel " << best_voxel_idx.transpose() << std::endl;
+      std::cout << "[getVisibleVoxels] could not find voxel " << global_voxel_idx.transpose() << std::endl;
       continue;
     }
 
-    //std::cout << "voxel segment: " << voxel->segment_id << " segment_map_[voxel->segment_id] size: " << segment_map_[voxel->segment_id].size() << std::endl;
-    visible_voxels_[point_idx] = best_voxel_idx;
-    segment_map_[voxel->segment_id].emplace_back(point_idx);
+    visible_voxels_[i].emplace_back(global_voxel_idx);
+    segment_map_[voxel->segment_id].emplace_back(i);
     segment_blocks_map_[voxel->segment_id].emplace(block_idx);
+
+    // Now check the surrounding voxels along the bearing vector. If they have
+    // never been observed, then fill in their value. Otherwise don't.
+    Point close_voxel = surface_intersection;
+    for (int voxel_offset = -config_.voxel_prop_radius;
+         voxel_offset <= config_.voxel_prop_radius; voxel_offset++) {
+      close_voxel =
+          surface_intersection + direction * voxel_offset * voxel_size_;
+
+      BlockIndex close_block_idx = segmentation_layer_->computeBlockIndexFromCoordinates(close_voxel);
+      GlobalIndex close_global_voxel_idx =
+          getGridIndexFromPoint<GlobalIndex>(close_voxel, voxel_size_inv_);
+
+      SegmentedVoxel* close_voxel = segmentation_layer_->getVoxelPtrByGlobalIndex(close_global_voxel_idx);
+
+      if (close_voxel == nullptr)
+      {
+        std::cout << "[getVisibleVoxels] could not find voxel " << close_global_voxel_idx.transpose() << std::endl;
+        continue;
+      }
+
+      visible_voxels_[i].emplace_back(close_global_voxel_idx);
+      segment_blocks_map_[voxel->segment_id].emplace(close_block_idx);
+    }
   }
 }
 
@@ -321,7 +242,6 @@ LabelIndexMap SegmentedTsdfIntegrator::propagateSegmentLabels(const Labels& segm
                                                               const LabelIndexMap& segment_map) {
 
   LabelIndexMap propagated_labels;
-
   Label best_overlap_id;
 
   for (auto img_segmentation: segment_map) {
@@ -376,11 +296,11 @@ LabelIndexMap SegmentedTsdfIntegrator::propagateSegmentLabels(const Labels& segm
 void SegmentedTsdfIntegrator::updateGlobalSegments(const LabelIndexMap& propagated_labels) {
   for (const auto& segment : propagated_labels) {
     for (const auto& point_idx: segment.second) {
-
       auto it = visible_voxels_.find(point_idx);
-
       if (it != visible_voxels_.end()) {
-        updateSegmentedVoxel(it->second, segment.first);
+        for (const auto& voxel_idx: it->second) {
+          updateSegmentedVoxel(voxel_idx, segment.first);
+        }
       }
     }
   }
@@ -471,11 +391,6 @@ void SegmentedTsdfIntegrator::applyLabelToVoxels(const BlockIndex& block_idx, La
     SegmentedVoxel& seg_voxel = block.getVoxelByLinearIndex(i);
 
     if (seg_voxel.segment_id == old_segment) {
-
-      // TODO: use mutex
-      // Lookup the mutex that is responsible for this voxel and lock it
-      //std::lock_guard<std::mutex> lock(mutexes_.get(global_voxel_idx));
-
       seg_voxel.segment_id = new_segment;
     }
   }
