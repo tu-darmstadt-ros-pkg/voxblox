@@ -16,6 +16,7 @@ cs_add_library(${PROJECT_NAME}
   src/intensity_server.cc
   src/transformer.cc
   src/tsdf_server.cc
+  src/segmentation_server.cc
   src/segmenter.cc
 )
 
@@ -52,6 +53,11 @@ cs_add_executable(visualize_tsdf
   src/visualize_tsdf.cc
 )
 target_link_libraries(visualize_tsdf ${PROJECT_NAME})
+
+cs_add_executable(segmentation_server
+  src/segmentation_server_node.cc
+)
+target_link_libraries(segmentation_server ${PROJECT_NAME})
 
 ##########
 # EXPORT #

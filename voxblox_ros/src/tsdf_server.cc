@@ -45,8 +45,6 @@ void TsdfServer::getServerConfigFromRosParam(
     color_mode_ = ColorMode::kLambert;
   } else if (color_mode == "lambert_color") {
     color_mode_ = ColorMode::kLambertColor;
-  } else if (color_mode == "segmentation") {
-    color_mode_ = ColorMode::kSegmentation;
   } else {  // Default case is gray.
     color_mode_ = ColorMode::kGray;
   }
@@ -55,14 +53,12 @@ void TsdfServer::getServerConfigFromRosParam(
 TsdfServer::TsdfServer(const ros::NodeHandle& nh,
                        const ros::NodeHandle& nh_private)
     : TsdfServer(nh, nh_private, getTsdfMapConfigFromRosParam(nh_private),
-                 getTsdfIntegratorConfigFromRosParam(nh_private),
-                 getSegTsdfIntegratorConfigFromRosParam(nh_private)) {}
+                 getTsdfIntegratorConfigFromRosParam(nh_private)) {}
 
 TsdfServer::TsdfServer(const ros::NodeHandle& nh,
                        const ros::NodeHandle& nh_private,
                        const TsdfMap::Config& config,
-                       const TsdfIntegratorBase::Config& integrator_config,
-                       const SegmentedTsdfIntegrator::Config& seg_integrator_config)
+                       const TsdfIntegratorBase::Config& integrator_config)
     : nh_(nh),
       nh_private_(nh_private),
       verbose_(true),
@@ -76,12 +72,8 @@ TsdfServer::TsdfServer(const ros::NodeHandle& nh,
       publish_tsdf_map_(false),
       cache_mesh_(false),
       pointcloud_queue_size_(1),
-      transformer_(nh, nh_private),
-      segmenter_(nh_private) {
+      transformer_(nh, nh_private) {
   getServerConfigFromRosParam(nh_private);
-
-  // Hide pcl warning spam
-  pcl::console::setVerbosityLevel(pcl::console::L_ALWAYS);
 
   // Advertise topics.
   mesh_pub_ = nh_private_.advertise<voxblox_msgs::Mesh>("mesh", 1, true);
@@ -137,12 +129,6 @@ TsdfServer::TsdfServer(const ros::NodeHandle& nh,
         integrator_config, tsdf_map_->getTsdfLayerPtr()));
   }
 
-  seg_tsdf_map_.reset(new SegmentedTsdfMap(config.tsdf_voxel_size, config.tsdf_voxels_per_side));
-
-  seg_tsdf_integrator_.reset(new SegmentedTsdfIntegrator(
-      seg_integrator_config, tsdf_map_->getTsdfLayerPtr(),
-      seg_tsdf_map_->getTsdfLayerPtr()));
-
   MeshIntegratorConfig mesh_config;
   nh_private_.param("mesh_min_weight", mesh_config.min_weight,
                     mesh_config.min_weight);
@@ -165,7 +151,6 @@ TsdfServer::TsdfServer(const ros::NodeHandle& nh,
       "publish_pointclouds", &TsdfServer::publishPointcloudsCallback, this);
   publish_tsdf_map_srv_ = nh_private_.advertiseService(
       "publish_map", &TsdfServer::publishTsdfMapCallback, this);
-  get_tsdf_map_srv_ = nh_private_.advertiseService("get_map", &TsdfServer::getTsdfMapCallback, this);
 
   // If set, use a timer to progressively integrate the mesh.
   double update_mesh_every_n_sec = 0.0;
@@ -177,9 +162,6 @@ TsdfServer::TsdfServer(const ros::NodeHandle& nh,
         nh_private_.createTimer(ros::Duration(update_mesh_every_n_sec),
                                 &TsdfServer::updateMeshEvent, this);
   }
-
-  depth_cam_info_sub_ = nh_.subscribe("depth_camera_info", 1,
-                    &TsdfServer::cameraInfoCallback, this);
 }
 
 void TsdfServer::processPointCloudMessageAndInsert(
@@ -238,8 +220,6 @@ void TsdfServer::processPointCloudMessageAndInsert(
       T_G_C.getPosition(), max_block_distance_from_body_);
   mesh_layer_->clearDistantMesh(T_G_C.getPosition(),
                                 max_block_distance_from_body_);
-    seg_tsdf_map_->getTsdfLayerPtr()->removeDistantBlocks(
-        T_G_C.getPosition(), max_block_distance_from_body_);
   block_remove_timer.Stop();
 
   // Callback for inheriting classes.
@@ -262,7 +242,6 @@ void TsdfServer::insertPointcloud(
                                    &T_G_C)) {
     processPointCloudMessageAndInsert(pointcloud_msg, T_G_C,
                                       is_freespace_pointcloud);
-    integrateSegmentation(pointcloud_msg, T_G_C);
   } else {
     ROS_WARN_THROTTLE(60, "Couldn't look up pose for incoming pointcloud.");
   }
@@ -310,53 +289,6 @@ void TsdfServer::integratePointcloud(const Transformation& T_G_C,
                                      const bool is_freespace_pointcloud) {
   tsdf_integrator_->integratePointCloud(T_G_C, ptcloud_C, colors,
                                         is_freespace_pointcloud);
-}
-
-void TsdfServer::integrateSegmentation(const sensor_msgs::PointCloud2::Ptr pointcloud_msg, const Transformation& T_G_C) {
-  // Convert the PCL pointcloud into our awesome format.
-  // TODO(helenol): improve...
-  // Horrible hack fix to fix color parsing colors in PCL.
-  for (size_t d = 0; d < pointcloud_msg->fields.size(); ++d) {
-    if (pointcloud_msg->fields[d].name == std::string("rgb")) {
-      pointcloud_msg->fields[d].datatype = sensor_msgs::PointField::FLOAT32;
-    }
-  }
-
-  pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_pcl(new pcl::PointCloud<pcl::PointXYZRGB>);
-
-  // pointcloud_pcl is modified below:
-  pcl::fromROSMsg(*pointcloud_msg, *cloud_pcl);
-
-  pcl::UniformSampling<pcl::PointXYZRGB> uniform_sampling;
-  uniform_sampling.setInputCloud(cloud_pcl);
-  uniform_sampling.setRadiusSearch(tsdf_map_->voxel_size());
-  pcl::PointCloud<int> sub_cloud_indices;
-  uniform_sampling.compute(sub_cloud_indices);
-  std::cout << "Total points: " << cloud_pcl->points.size() << " Selected Points: " << sub_cloud_indices.points.size() << " "<< std::endl;
-
-  Pointcloud points_C;
-  points_C.reserve(sub_cloud_indices.size());
-  for (size_t i = 0; i < sub_cloud_indices.size(); ++i) {
-
-    const pcl::PointXYZRGB& p = cloud_pcl->points[sub_cloud_indices[i]];
-
-    if (!std::isfinite(p.x) ||
-        !std::isfinite(p.y) ||
-        !std::isfinite(p.z)) {
-      continue;
-    }
-
-    points_C.push_back(Point(p.x, p.y, p.z));
-  }
-
-  Labels segmentation;
-  LabelIndexMap segment_map;
-  segmenter_.segmentPointcloud(cloud_pcl, sub_cloud_indices, segmentation, segment_map);
-
-  timing::Timer seg_integrate_timer("seg_integrate_segmentation");
-  seg_tsdf_integrator_->integrateSegmentedPointCloud(T_G_C, points_C, segmentation, segment_map, segmenter_.getColorMap());
-  seg_integrate_timer.Stop();
-
 }
 
 void TsdfServer::publishAllUpdatedTsdfVoxels() {
@@ -432,9 +364,6 @@ void TsdfServer::updateMesh() {
   constexpr bool clear_updated_flag = true;
   mesh_integrator_->generateMesh(only_mesh_updated_blocks, clear_updated_flag);
   generate_mesh_timer.Stop();
-
-  if (color_mode_ == ColorMode::kSegmentation)
-    applySegmentColors();
 
   timing::Timer publish_mesh_timer("mesh/publish");
   voxblox_msgs::Mesh mesh_msg;
@@ -555,19 +484,6 @@ bool TsdfServer::publishTsdfMapCallback(
   return true;
 }
 
-bool TsdfServer::getTsdfMapCallback(
-    voxblox_msgs::GetLayer::Request &request,
-    voxblox_msgs::GetLayer::Response &response)
-{
-  bool only_updated = false;
-  if (request.action == voxblox_msgs::Layer::ACTION_UPDATE) {
-    only_updated = true;
-  }
-  serializeLayerAsMsg<TsdfVoxel>(this->tsdf_map_->getTsdfLayer(), only_updated,
-                                 &response.layer);
-  return true;
-}
-
 void TsdfServer::updateMeshEvent(const ros::TimerEvent& /*event*/) {
   updateMesh();
 }
@@ -598,54 +514,4 @@ void TsdfServer::tsdfMapCallback(const voxblox_msgs::Layer& layer_msg) {
   }
 }
 
-void TsdfServer::cameraInfoCallback(const sensor_msgs::CameraInfoConstPtr msg) {
-
-  Eigen::Matrix<FloatingPoint, 2, 1> resolution = {msg->width, msg->height};
-  seg_tsdf_integrator_->updateCameraModel(resolution, msg->K[0]);
-}
-
-void TsdfServer::applySegmentColors() {
-
-  BlockIndexList mesh_indices;
-
-  // TODO: only use updated meshes?
-  mesh_layer_->getAllAllocatedMeshes(&mesh_indices);
-
-  const Layer<SegmentedVoxel>& segment_layer = seg_tsdf_map_->getTsdfLayer();
-
-  ROS_WARN_STREAM("mesh layer has " << mesh_indices.size() << " blocks");
-  ROS_WARN_STREAM("seg layer has " << segment_layer.getNumberOfAllocatedBlocks() << " blocks");
-
-  for (const BlockIndex& block_index : mesh_indices) {
-    Mesh::Ptr mesh = mesh_layer_->getMeshPtrByIndex(block_index);
-    Block<SegmentedVoxel>::ConstPtr seg_block = segment_layer.getBlockPtrByIndex(block_index);
-
-    mesh->colorizeMesh(Color::Black());
-
-    if (!seg_block || !mesh)
-    {
-      continue;
-    }
-
-    // Use nearest-neighbor search.
-    for (size_t i = 0; i < mesh->vertices.size(); i++) {
-      const Point& vertex = mesh->vertices[i];
-      VoxelIndex voxel_index = seg_block->computeVoxelIndexFromCoordinates(vertex);
-      if (seg_block->isValidVoxelIndex(voxel_index)) {
-        const SegmentedVoxel& voxel = seg_block->getVoxelByVoxelIndex(voxel_index);
-
-        mesh->colors[i] = segmenter_.getSegmentColor(voxel.segment_id);
-      } else {
-        const typename Block<SegmentedVoxel>::ConstPtr neighbor_block =
-            segment_layer.getBlockPtrByCoordinates(vertex);
-
-        if (!neighbor_block)
-          continue;
-
-        const SegmentedVoxel& voxel = neighbor_block->getVoxelByCoordinates(vertex);
-        mesh->colors[i] = segmenter_.getSegmentColor(voxel.segment_id);
-      }
-    }
-  }
-}
 }  // namespace voxblox
