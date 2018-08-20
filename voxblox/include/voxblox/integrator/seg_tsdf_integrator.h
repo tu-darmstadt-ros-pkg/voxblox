@@ -21,8 +21,15 @@
 #include "voxblox/utils/approx_hash_array.h"
 #include "voxblox/utils/timing.h"
 #include <voxblox/utils/camera_model.h>
+#include <voxblox/utils/distance_utils.h>
 
 #include "voxblox/core/block_hash.h"
+
+// TODO: remove after debugging
+#include <pcl_ros/point_cloud.h>
+#include <pcl/point_types.h>
+#include <pcl/point_cloud.h>
+#include <pcl/io/pcd_io.h>
 
 namespace voxblox {
 
@@ -47,6 +54,7 @@ class SegmentedTsdfIntegrator {
     size_t min_segment_pixel_size = 50;
     float min_segment_merge_overlap = 0.2f;
     int voxel_prop_radius = 2;
+    bool write_debug_data_ = false;
   };
 
   SegmentedTsdfIntegrator(const Config& config, Layer<TsdfVoxel>* tsdf_layer,

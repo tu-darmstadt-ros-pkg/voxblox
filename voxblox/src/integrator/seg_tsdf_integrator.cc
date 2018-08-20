@@ -148,13 +148,95 @@ void SegmentedTsdfIntegrator::integrateSegmentedPointCloud(const Transformation&
     propagated_map_size += item.second.size();
   std::cout << "propagated map size: " << propagated_map_size << std::endl;
 
+
   timing::Timer seg_check_merge_candidates_timer("seg_check_merge_candidates");
+
   checkMergeCandidates(propagated_labels);
   seg_check_merge_candidates_timer.Stop();
 
   timing::Timer seg_update_global_segments_timer("seg_update_global_segments");
   updateGlobalSegments(propagated_labels);
   seg_update_global_segments_timer.Stop();
+
+  if (config_.write_debug_data_) {
+    pcl::PointCloud<pcl::PointXYZRGB> visible_points;
+    pcl::PointCloud<pcl::PointXYZRGB> prop_points_merged;
+    pcl::PointXYZRGB p;
+
+    for (auto item : segment_map_) {
+
+      Color color;
+
+      auto it = color_map.find(item.first);
+      if (it != color_map.end()) {
+        color = it->second;
+      } else {
+        color.r = static_cast<uint8_t>(rand() % 256);
+        color.g = static_cast<uint8_t>(rand() % 256);
+        color.b = static_cast<uint8_t>(rand() % 256);
+      }
+
+      p.r = color.r;
+      p.g = color.g;
+      p.b = color.b;
+
+      for (auto index: item.second) {
+
+        const Point& point_C = points_C[index];
+        const Point point_G = T_G_C * point_C;
+
+        p.x = point_G(0);
+        p.y = point_G(1);
+        p.z = point_G(2);
+
+        visible_points.points.push_back(p);
+      }
+    }
+
+    visible_points.width = 1;
+    visible_points.height = visible_points.points.size();
+
+    if (!visible_points.points.empty())
+      pcl::io::savePCDFile("/home/marius/pcds/visible_points_" + std::to_string(num_frames_) + ".pcd", visible_points);
+
+    for (auto item : propagated_labels) {
+
+      Color color;
+
+      auto it = color_map.find(item.first);
+      if (it != color_map.end()) {
+        color = it->second;
+      } else {
+        color.r = static_cast<uint8_t>(rand() % 256);
+        color.g = static_cast<uint8_t>(rand() % 256);
+        color.b = static_cast<uint8_t>(rand() % 256);
+      }
+
+      p.r = color.r;
+      p.g = color.g;
+      p.b = color.b;
+
+      for (auto index: item.second) {
+
+        const Point& point_C = points_C[index];
+        const Point point_G = T_G_C * point_C;
+
+        p.x = point_G(0);
+        p.y = point_G(1);
+        p.z = point_G(2);
+
+        prop_points_merged.points.push_back(p);
+      }
+    }
+
+    prop_points_merged.width = 1;
+    prop_points_merged.height = prop_points_merged.points.size();
+
+    if (!prop_points_merged.points.empty())
+      pcl::io::savePCDFile("/home/marius/pcds/prop_merged_" + std::to_string(num_frames_) + ".pcd", prop_points_merged);
+  }
+
+  num_frames_ += 1;
 }
 
 void SegmentedTsdfIntegrator::updateCameraModel(const Eigen::Matrix<FloatingPoint, 2, 1>& resolution, double focal_length)
