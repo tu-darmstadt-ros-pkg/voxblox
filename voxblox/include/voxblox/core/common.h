@@ -55,9 +55,12 @@ typedef LongIndex GlobalIndex;
 typedef AlignedVector<LongIndex> GlobalIndexList;
 typedef std::pair<BlockIndex, VoxelIndex> VoxelKey;
 
+typedef Eigen::Matrix<IndexElement, 2, 1> ImageIndex;
+
 typedef AlignedVector<AnyIndex> IndexVector;
 typedef IndexVector BlockIndexList;
 typedef IndexVector VoxelIndexList;
+typedef AlignedVector<ImageIndex> ImageIndexList;
 
 struct IndexHash {
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW

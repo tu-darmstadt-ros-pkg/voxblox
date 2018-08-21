@@ -79,6 +79,7 @@ void Segmenter::segmentPointcloud(const pcl::PointCloud<pcl::PointXYZRGB>::Const
   labels.convertTo(labels, CV_8U);
 
   segments.reserve(sub_cloud_indices.size());
+  ImageIndexList segment_centroids(num_labels);
 
   for (size_t i = 0; i < sub_cloud_indices.size(); ++i) {
 
@@ -93,9 +94,11 @@ void Segmenter::segmentPointcloud(const pcl::PointCloud<pcl::PointXYZRGB>::Const
 
     int col = sub_cloud_index % width;
     int row = sub_cloud_index / width;
+    uchar label = labels.at<uchar>(row, col);
 
-    segments.push_back(labels.at<uchar>(row, col));
-    segment_map[labels.at<uchar>(row, col)].emplace_back(i);
+    segments.push_back(label);
+    segment_map[label].emplace_back(i);
+    segment_centroids[label] += ImageIndex(row, col);
   }
 
   cv::cvtColor(labels, labels, CV_GRAY2BGR);
@@ -109,7 +112,7 @@ void Segmenter::segmentPointcloud(const pcl::PointCloud<pcl::PointXYZRGB>::Const
   }
 
   cv::LUT(labels, colors, labels);
-  enumerateSegments(segment_map, labels);
+  enumerateSegments(segment_map, segment_centroids, labels);
 
   publishImg(edge_img, pcl_conversions::fromPCL(cloud->header), edge_img_pub_);
   publishImg(edge_img_concave, pcl_conversions::fromPCL(cloud->header), concave_edges_pub_);
@@ -304,35 +307,35 @@ void Segmenter::initColorMap(int num_entries) {
   }
 }
 
-void Segmenter::enumerateSegments(const LabelIndexMap& segment_map, cv::Mat& img) {
+void Segmenter::enumerateSegments(const LabelIndexMap& segment_map, const ImageIndexList& segment_centroids, cv::Mat& img) {
 
-  uint img_width = static_cast<uint>(img.cols);
-  auto font = cv::FONT_HERSHEY_PLAIN;
+  const auto font = cv::FONT_HERSHEY_PLAIN;
+  const double font_scale = 2;
+  const int font_thickness = 2;
 
   for (auto segment: segment_map) {
 
     if (segment.first == 0)
       continue;
 
-    uint num_pixel = 0;
-    uint row_sum = 0;
-    uint col_sum = 0;
-
-    // determine center pixel
-    for (uint index: segment.second) {
-      num_pixel++;
-      col_sum += index % img_width;
-      row_sum += index / img_width;
-    }
+    int num_pixel = static_cast<int>(segment.second.size());
 
     if (num_pixel < 20)
       continue;
 
-    int avg_row = static_cast<int>(std::round(row_sum/num_pixel));
-    int avg_col = static_cast<int>(std::round(col_sum/num_pixel));
+    const std::string text = std::to_string(segment.first);
+
+    int baseline = 0;
+    cv::Size text_size = cv::getTextSize(text, font, font_scale, font_thickness, &baseline);
+
+    int avg_row = segment_centroids[segment.first](0)/num_pixel;
+    int avg_col = segment_centroids[segment.first](1)/num_pixel;
+
+    avg_row -= text_size.height / 2;
+    avg_col -= text_size.width / 2;
 
     cv::putText(img, std::to_string(segment.first), cv::Point(avg_col, avg_row),
-                font, 2, cvScalar(255, 255, 255), 2);
+                font, font_scale, cvScalar(255, 255, 255), font_thickness);
   }
 }
 }  // namespace voxblox

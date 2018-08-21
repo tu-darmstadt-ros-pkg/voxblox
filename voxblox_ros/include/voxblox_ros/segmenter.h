@@ -72,7 +72,8 @@ class Segmenter {
 
   void getNeighbors(int row, int col, int height, int width, pcl::PointIndices& neighbors);
 
-  void enumerateSegments(const LabelIndexMap &segment_map, cv::Mat &img);
+  void enumerateSegments(const LabelIndexMap& segment_map, const ImageIndexList& segment_centroids,
+                         cv::Mat& img);
 
   ros::NodeHandle nh_private_;
 
