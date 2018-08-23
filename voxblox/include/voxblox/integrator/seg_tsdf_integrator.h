@@ -80,9 +80,6 @@ class SegmentedTsdfIntegrator {
   inline bool isPointValid(const Point& point_C, const Label &segment) const;
   inline bool isPointValid(const Point& point_C) const;
 
-  // NOT thread safe
-  void updateLayerWithStoredBlocks();
-
   // Updates seg_voxel. Thread safe.
   void updateSegmentedVoxel(const GlobalIndex& global_voxel_index, const Label& segment);
 
@@ -123,11 +120,6 @@ class SegmentedTsdfIntegrator {
   FloatingPoint voxel_size_inv_;
   FloatingPoint voxels_per_side_inv_;
   FloatingPoint block_size_inv_;
-
-  // Temporary block storage, used to hold blocks that need to be created while
-  // integrating a new pointcloud
-  std::mutex temp_block_mutex_;
-  Layer<SegmentedVoxel>::BlockHashMap temp_block_map_;
 
   CameraModel depth_cam_model_;
 

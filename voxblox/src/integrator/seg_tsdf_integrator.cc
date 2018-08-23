@@ -46,17 +46,6 @@ inline bool SegmentedTsdfIntegrator::isPointValid(const Point& point_C) const {
   }
 }
 
-// NOT thread safe
-void SegmentedTsdfIntegrator::updateLayerWithStoredBlocks() {
-
-  for (const std::pair<const BlockIndex, Block<SegmentedVoxel>::Ptr>&
-           temp_block_pair : temp_block_map_) {
-    segmentation_layer_->insertBlock(temp_block_pair);
-  }
-
-  temp_block_map_.clear();
-}
-
 // Updates segmented voxel. Thread safe.
 void SegmentedTsdfIntegrator::updateSegmentedVoxel(const GlobalIndex& global_voxel_idx,
                                                    const Label& segment) {
@@ -134,10 +123,6 @@ void SegmentedTsdfIntegrator::integrateSegmentedPointCloud(const Transformation&
   for (auto item : segment_map_)
     seg_map_size += item.second.size();
   std::cout << "segment map size: " << seg_map_size << std::endl;
-
-  timing::Timer insertion_timer("seg_inserting_missed_blocks");
-  updateLayerWithStoredBlocks();
-  insertion_timer.Stop();
 
   timing::Timer seg_propagate_segment_labels_timer("seg_propagate_segment_labels");
 
@@ -290,7 +275,7 @@ void SegmentedTsdfIntegrator::getVisibleVoxels(const Transformation& T_G_C,
 
     if (voxel == nullptr)
     {
-      std::cout << "[getVisibleVoxels] could not find voxel " << global_voxel_idx.transpose() << std::endl;
+      //std::cout << "[getVisibleVoxels] could not find voxel " << global_voxel_idx.transpose() << std::endl;
       continue;
     }
 
@@ -314,7 +299,7 @@ void SegmentedTsdfIntegrator::getVisibleVoxels(const Transformation& T_G_C,
 
       if (close_voxel == nullptr)
       {
-        std::cout << "[getVisibleVoxels] could not find voxel " << close_global_voxel_idx.transpose() << std::endl;
+        //std::cout << "[getVisibleVoxels] could not find voxel " << close_global_voxel_idx.transpose() << std::endl;
         continue;
       }
 
