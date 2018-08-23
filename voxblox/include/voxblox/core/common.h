@@ -61,6 +61,7 @@ typedef AlignedVector<AnyIndex> IndexVector;
 typedef IndexVector BlockIndexList;
 typedef IndexVector VoxelIndexList;
 typedef AlignedVector<ImageIndex> ImageIndexList;
+typedef AlignedVector<LongIndex> LongIndexVector;
 
 struct IndexHash {
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -118,6 +119,7 @@ typedef kindr::minimal::RotationQuaternionTemplate<
 // For alignment of layers / point clouds
 typedef Eigen::Matrix<FloatingPoint, 3, Eigen::Dynamic> PointsMatrix;
 typedef Eigen::Matrix<FloatingPoint, 3, 3> Matrix3;
+typedef Eigen::Matrix<FloatingPoint, 2, 2> Matrix2;
 
 // Interpolation structure
 typedef Eigen::Matrix<FloatingPoint, 8, 8> InterpTable;
