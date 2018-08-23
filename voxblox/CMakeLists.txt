@@ -66,6 +66,7 @@ set("${PROJECT_NAME}_SRCS"
   src/utils/protobuf_utils.cc
   src/utils/timing.cc
   src/utils/voxel_utils.cc
+  src/utils/segment_tools.cc
 )
 
 #############

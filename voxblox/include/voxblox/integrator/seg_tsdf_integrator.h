@@ -72,6 +72,8 @@ class SegmentedTsdfIntegrator {
 
   void updateCameraModel(const Eigen::Matrix<FloatingPoint, 2, 1>& resolution, double focal_length);
 
+  const LabelBlockIndexesMap& getSegmentBlocksMap() const { return segment_blocks_map_; }
+  const Labels& getUpdatedSegments() const { return updated_segments_; }
 
  private:
   // Thread safe.
@@ -134,6 +136,8 @@ class SegmentedTsdfIntegrator {
   LabelIndexMap segment_merge_candidates_;
   LabelPairConfidenceMap label_pair_confidences_;
   LabelBlockIndexesMap  segment_blocks_map_;
+
+  Labels updated_segments_;
 
   Label max_label_;
   uint num_frames_;

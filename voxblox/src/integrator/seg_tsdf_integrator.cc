@@ -109,6 +109,7 @@ void SegmentedTsdfIntegrator::integrateSegmentedPointCloud(const Transformation&
 
   visible_voxels_.clear();
   segment_map_.clear();
+  updated_segments_.clear();
 
   ThreadSafeIndex index_getter(points_C.size());
 
@@ -148,11 +149,15 @@ void SegmentedTsdfIntegrator::integrateSegmentedPointCloud(const Transformation&
     propagated_map_size += item.second.size();
   std::cout << "propagated map size: " << propagated_map_size << std::endl;
 
-
   timing::Timer seg_check_merge_candidates_timer("seg_check_merge_candidates");
 
   checkMergeCandidates(propagated_labels);
   seg_check_merge_candidates_timer.Stop();
+
+  // remember all the updated segments
+  for (auto segment: propagated_labels) {
+    updated_segments_.emplace_back(segment.first);
+  }
 
   timing::Timer seg_update_global_segments_timer("seg_update_global_segments");
   updateGlobalSegments(propagated_labels);
@@ -252,7 +257,6 @@ void SegmentedTsdfIntegrator::getVisibleVoxels(const Transformation& T_G_C,
 
   const Point& origin = T_G_C.getPosition();
   const FloatingPoint max_distance = config_.max_ray_length_m;
-
 
   for (size_t i = 0; i < points_C.size(); ++i) {
     Point surface_intersection = Point::Zero();

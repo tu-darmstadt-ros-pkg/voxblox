@@ -8,10 +8,12 @@
 #include <voxblox/core/voxel.h>
 #include <voxblox/integrator/intensity_integrator.h>
 #include <voxblox/utils/color_maps.h>
+#include <voxblox/utils/segment_tools.h>
 
 #include "voxblox_ros/tsdf_server.h"
 #include "voxblox_ros/ros_params.h"
 #include "voxblox_ros/segmenter.h"
+#include "voxblox_ros/mesh_vis.h"
 
 #include <pcl/keypoints/uniform_sampling.h>
 
@@ -43,6 +45,7 @@ class SegmentationServer : public TsdfServer {
   std::shared_ptr<SegmentedTsdfMap> seg_tsdf_map_;
   std::unique_ptr<SegmentedTsdfIntegrator> seg_tsdf_integrator_;
   Segmenter segmenter_;
+  SegmentTools::Ptr segment_tool_;
 
   // Subscriber for the camera info needed to do the reprojections
   ros::Subscriber depth_cam_info_sub_;

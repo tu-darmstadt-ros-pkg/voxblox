@@ -9,8 +9,7 @@ SegmentationServer::SegmentationServer(const ros::NodeHandle& nh,
 SegmentationServer::SegmentationServer(const ros::NodeHandle& nh,
                                        const ros::NodeHandle& nh_private,
                                        const SegmentedTsdfIntegrator::Config& seg_integrator_config)
-    : TsdfServer(nh, nh_private),
-      segmenter_(nh_private) {
+    : TsdfServer(nh, nh_private), segmenter_(nh_private) {
   cache_mesh_ = true;
 
   // Publishers for output.
@@ -25,6 +24,8 @@ SegmentationServer::SegmentationServer(const ros::NodeHandle& nh,
   seg_tsdf_integrator_.reset(new SegmentedTsdfIntegrator(
       seg_integrator_config, tsdf_map_->getTsdfLayerPtr(),
       seg_tsdf_map_->getTsdfLayerPtr()));
+
+  segment_tool_.reset(new SegmentTools(tsdf_map_->getTsdfLayerPtr(), seg_tsdf_map_->getTsdfLayerPtr()));
 }
 
 void SegmentationServer::updateMesh() {
@@ -133,6 +134,23 @@ void SegmentationServer::processPointCloudMessageAndInsert(const sensor_msgs::Po
                                                            const bool is_freespace_pointcloud) {
   TsdfServer::processPointCloudMessageAndInsert(pointcloud_msg, T_G_C, is_freespace_pointcloud);
   integrateSegmentation(pointcloud_msg, T_G_C);
+
+  pcl::PointCloud<pcl::PointXYZRGB> pointcloud;
+
+  for (auto segment_id: seg_tsdf_integrator_->getUpdatedSegments()) {
+    if (segment_id == 0)
+      continue;
+    pointcloud.clear();
+    MeshLayer::ConstPtr mesh = segment_tool_->meshSegment(seg_tsdf_integrator_->getSegmentBlocksMap(), segment_id);
+    fillPointcloudWithMesh(mesh, ColorMode::kLambertColor, &pointcloud);
+
+    pointcloud.width = 1;
+    pointcloud.height = pointcloud.points.size();
+
+    if (!pointcloud.points.empty())
+      pcl::io::savePCDFile("/home/marius/pcds/segment_" + std::to_string(segment_id) + ".pcd", pointcloud);
+  }
+
 }
 
 }  // namespace voxblox
