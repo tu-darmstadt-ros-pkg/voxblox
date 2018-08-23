@@ -57,23 +57,23 @@ class Segmenter {
 
   void initColorMap(int num_entries);
 
-  void publishImg(const cv::Mat& img, const std_msgs::Header& header, ros::Publisher& pub);
+  void publishImg(const cv::UMat& img, const std_msgs::Header& header, ros::Publisher& pub);
 
   void detectConcaveBoundaries(const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr cloud,
                            const pcl::PointCloud<pcl::Normal>::ConstPtr normals,
-                           cv::Mat &edge_img);
+                           cv::UMat &edge_img);
 
   void detectGeometricalBoundaries(const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr cloud,
                            const pcl::PointCloud<pcl::Normal>::ConstPtr normals,
-                           cv::Mat& edge_img);
+                           cv::UMat& edge_img);
 
   void detectRgbBoundaries(const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr cloud,
-                           cv::Mat& edge_img);
+                           cv::UMat& edge_img);
 
   void getNeighbors(int row, int col, int height, int width, pcl::PointIndices& neighbors);
 
   void enumerateSegments(const LabelIndexMap& segment_map, const ImageIndexList& segment_centroids,
-                         cv::Mat& img);
+                         cv::UMat& img);
 
   ros::NodeHandle nh_private_;
 
