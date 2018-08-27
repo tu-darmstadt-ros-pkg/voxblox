@@ -46,8 +46,7 @@ class Segmenter {
 
   Segmenter(const ros::NodeHandle& nh);
 
-  void segmentPointcloud(const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr cloud, const pcl::PointCloud<int>& sub_cloud_indices,
-                         Labels& segments, LabelIndexMap& segment_map);
+  void segmentPointcloud(const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr cloud, const pcl::PointCloud<int>& sub_cloud_indices, LabelIndexMap& segment_map);
 
   Color getSegmentColor(uint segment);
 

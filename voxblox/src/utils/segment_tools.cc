@@ -33,6 +33,9 @@ Layer<TsdfVoxel>::Ptr SegmentTools::extractSegmentTsdfLayer(const LabelBlockInde
     Block<TsdfVoxel>::Ptr source_tsdf_block = tsdf_layer_->getBlockPtrByIndex(block_idx);
     Block<SegmentedVoxel>::Ptr seg_block = seg_layer_->getBlockPtrByIndex(block_idx);
 
+    if (!target_tsdf_block || ! source_tsdf_block || !seg_block)
+      continue;
+
     // determine the voxels belonging to the chosen segment and transfer these to the new tsdf layer
     for (size_t voxel_idx = 0; voxel_idx < target_tsdf_block->num_voxels(); voxel_idx++) {
       const SegmentedVoxel& seg_voxel = seg_block->getVoxelByLinearIndex(voxel_idx);

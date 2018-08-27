@@ -63,8 +63,7 @@ class SegmentedTsdfIntegrator {
   // NOT thread safe.
   void integrateSegmentedPointCloud(const Transformation& T_G_C,
                            const Pointcloud& points_C,
-                           const Labels& segmentation,
-                           const LabelIndexMap& segment_map,
+                           LabelIndexMap& segment_map,
                            const std::map<uint, Color>& color_map);
 
   // Returns a CONST ref of the config.
@@ -94,12 +93,11 @@ class SegmentedTsdfIntegrator {
                                   const Pointcloud& points_C,
                                   ThreadSafeIndex* index_getter);
 
-  LabelIndexMap propagateSegmentLabels(const Labels& segmentation,
-                              const LabelIndexMap& segment_map);
+  LabelIndexMap propagateSegmentLabels(LabelIndexMap &segment_map);
 
   void updateGlobalSegments(const LabelIndexMap& propagated_labels);
 
-  float computeSegmentOverlap(Labels& segment1, Labels& segment2);
+  float computeSegmentOverlap(Label segment_1_id, Label segment_2_id, Labels& segment1_idxs, Labels& segment2_idxs);
 
   void checkMergeCandidates(LabelIndexMap& propagated_labels);
   void mergeSegmentLabels(LabelIndexMap& propagated_labels, const LabelPair& label_pair);

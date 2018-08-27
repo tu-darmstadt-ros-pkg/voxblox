@@ -86,12 +86,11 @@ void SegmentationServer::integrateSegmentation(const sensor_msgs::PointCloud2::P
     points_C.push_back(Point(p.x, p.y, p.z));
   }
 
-  Labels segmentation;
   LabelIndexMap segment_map;
-  segmenter_.segmentPointcloud(cloud_pcl, sub_cloud_indices, segmentation, segment_map);
+  segmenter_.segmentPointcloud(cloud_pcl, sub_cloud_indices, segment_map);
 
   timing::Timer seg_integrate_timer("seg_integrate_segmentation");
-  seg_tsdf_integrator_->integrateSegmentedPointCloud(T_G_C, points_C, segmentation, segment_map, segmenter_.getColorMap());
+  seg_tsdf_integrator_->integrateSegmentedPointCloud(T_G_C, points_C, segment_map, segmenter_.getColorMap());
   seg_integrate_timer.Stop();
 
   seg_tsdf_map_->getTsdfLayerPtr()->removeDistantBlocks(

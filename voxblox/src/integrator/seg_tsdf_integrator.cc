@@ -88,13 +88,10 @@ float SegmentedTsdfIntegrator::computeDistance(const Point& origin,
 
 void SegmentedTsdfIntegrator::integrateSegmentedPointCloud(const Transformation& T_G_C,
                                                   const Pointcloud& points_C,
-                                                  const Labels& segmentation,
-                                                  const LabelIndexMap& segment_map,
+                                                  LabelIndexMap& segment_map,
                                                   const std::map<uint, Color>& color_map) {
 
   timing::Timer seg_get_visible_voxels_timer("seg_get_visible_voxels");
-
-  CHECK_EQ(points_C.size(), segmentation.size());
 
   visible_voxels_.clear();
   segment_map_.clear();
@@ -126,7 +123,7 @@ void SegmentedTsdfIntegrator::integrateSegmentedPointCloud(const Transformation&
 
   timing::Timer seg_propagate_segment_labels_timer("seg_propagate_segment_labels");
 
-  LabelIndexMap propagated_labels = propagateSegmentLabels(segmentation, segment_map);
+  LabelIndexMap propagated_labels = propagateSegmentLabels(segment_map);
   seg_propagate_segment_labels_timer.Stop();
 
   int propagated_map_size = 0;
@@ -309,13 +306,11 @@ void SegmentedTsdfIntegrator::getVisibleVoxels(const Transformation& T_G_C,
   }
 }
 
-LabelIndexMap SegmentedTsdfIntegrator::propagateSegmentLabels(const Labels& segmentation,
-                                                              const LabelIndexMap& segment_map) {
-
+LabelIndexMap SegmentedTsdfIntegrator::propagateSegmentLabels(LabelIndexMap& segment_map) {
   LabelIndexMap propagated_labels;
   Label best_overlap_id;
 
-  for (auto img_segmentation: segment_map) {
+  for (auto& img_segmentation: segment_map) {
 
     // skip the unsegmented part and the noisy parts of the image
     if (img_segmentation.first == 0 || img_segmentation.second.size() < config_.min_segment_pixel_size)
@@ -323,9 +318,9 @@ LabelIndexMap SegmentedTsdfIntegrator::propagateSegmentLabels(const Labels& segm
 
     float best_overlap = -std::numeric_limits<float>::max();
 
-    for (auto global_segmentation: segment_map_) {
+    for (auto& global_segmentation: segment_map_) {
 
-      float overlap = computeSegmentOverlap(global_segmentation.second, img_segmentation.second);
+      float overlap = computeSegmentOverlap(global_segmentation.first, img_segmentation.first, global_segmentation.second, img_segmentation.second);
 
       if (overlap >= best_overlap) {
         best_overlap = overlap;
@@ -377,17 +372,20 @@ void SegmentedTsdfIntegrator::updateGlobalSegments(const LabelIndexMap& propagat
   }
 }
 
-float SegmentedTsdfIntegrator::computeSegmentOverlap(Labels& segment1, Labels& segment2) {
+float SegmentedTsdfIntegrator::computeSegmentOverlap(Label segment_1_id, Label /*segment_2_id*/, Labels& segment1_idxs, Labels& segment2_idxs) {
   Labels intersection_indices;
 
-  std::sort(segment1.begin(), segment1.end());
-  std::sort(segment2.begin(), segment2.end());
+  if ((static_cast<float>(segment2_idxs.size()) / static_cast<float>(segment1_idxs.size())) < 0.05f && segment_1_id != 0)
+    return 0.0f;
 
-  std::set_intersection(segment1.begin(), segment1.end(),
-                        segment2.begin(), segment2.end(),
+  std::sort(segment1_idxs.begin(), segment1_idxs.end());
+  std::sort(segment2_idxs.begin(), segment2_idxs.end());
+
+  std::set_intersection(segment1_idxs.begin(), segment1_idxs.end(),
+                        segment2_idxs.begin(), segment2_idxs.end(),
                         std::back_inserter(intersection_indices));
 
-  return static_cast<float>(intersection_indices.size()) / static_cast<float>(segment2.size());
+  return static_cast<float>(intersection_indices.size()) / static_cast<float>(segment2_idxs.size());
 }
 
 void SegmentedTsdfIntegrator::checkMergeCandidates(LabelIndexMap& propagated_labels) {

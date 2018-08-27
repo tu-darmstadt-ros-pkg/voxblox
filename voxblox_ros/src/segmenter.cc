@@ -20,8 +20,7 @@ Segmenter::Segmenter(const ros::NodeHandle& nh_private) :
   nh_private_.param("seg_max_dist_step_", max_dist_step_, 0.005f);
 }
 
-void Segmenter::segmentPointcloud(const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr cloud, const pcl::PointCloud<int>& sub_cloud_indices,
-                                  Labels& segments, LabelIndexMap& segment_map) {
+void Segmenter::segmentPointcloud(const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr cloud, const pcl::PointCloud<int>& sub_cloud_indices, LabelIndexMap& segment_map) {
 
   if (cloud->points.empty())
     return;
@@ -29,7 +28,6 @@ void Segmenter::segmentPointcloud(const pcl::PointCloud<pcl::PointXYZRGB>::Const
   int width = static_cast<int>(cloud->width);
   int height = static_cast<int>(cloud->height);
 
-  segments.clear();
   segment_map.clear();
 
   pcl::PointCloud<pcl::Normal>::Ptr normals(new pcl::PointCloud<pcl::Normal>);
@@ -96,7 +94,6 @@ void Segmenter::segmentPointcloud(const pcl::PointCloud<pcl::PointXYZRGB>::Const
     int row = sub_cloud_index / width;
     uchar label = labels.at<uchar>(row, col);
 
-    segments.push_back(label);
     segment_map[label].emplace_back(i);
     segment_centroids[label] += ImageIndex(row, col);
   }
@@ -315,7 +312,9 @@ void Segmenter::enumerateSegments(const LabelIndexMap& segment_map, const ImageI
 
   for (auto segment: segment_map) {
 
-    if (segment.first == 0)
+    Label segment_id = segment.first;
+
+    if (segment_id == 0)
       continue;
 
     int num_pixel = static_cast<int>(segment.second.size());
