@@ -22,7 +22,6 @@ Layer<TsdfVoxel>::Ptr SegmentTools::extractSegmentTsdfLayer(const LabelBlockInde
   if (it == segment_blocks_map.end()) {
     std::cout << "could not find segment " << segment << std::endl;
     return seg_tsdf_layer;
-
   }
 
   const BlockIndexSet& blocks = it->second;

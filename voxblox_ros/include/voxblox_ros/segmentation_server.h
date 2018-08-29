@@ -13,7 +13,8 @@
 #include "voxblox_ros/tsdf_server.h"
 #include "voxblox_ros/ros_params.h"
 #include "voxblox_ros/segmenter.h"
-#include "voxblox_ros/mesh_vis.h"
+
+#include <voxblox_msgs/PointCloudList.h>
 
 #include <pcl/keypoints/uniform_sampling.h>
 
@@ -28,18 +29,20 @@ class SegmentationServer : public TsdfServer {
   virtual ~SegmentationServer() {}
 
   virtual void updateMesh();
+  virtual void publishPointclouds();
   virtual void processPointCloudMessageAndInsert(const sensor_msgs::PointCloud2::Ptr& pointcloud_msg,
                                                  const Transformation& T_G_C,
                                                  const bool is_freespace_pointcloud);
-  virtual void publishPointclouds();
 
  protected:
 
   void recolorVoxbloxMeshMsgBySegmentation(voxblox_msgs::Mesh* mesh_msg);
   void integrateSegmentation(const sensor_msgs::PointCloud2::Ptr pointcloud_msg, const Transformation& T_G_C);
+  inline void fillPointcloudWithMesh(const MeshLayer::ConstPtr& mesh_layer, pcl::PointCloud<pcl::PointNormal>& pointcloud);
+  void publishSegmentPointclouds();
 
   // Publish markers for visualization.
-  ros::Publisher segmentation_pointcloud_pub_;
+  ros::Publisher segment_pointclouds_pub_;
   ros::Publisher segmentation_mesh_pub_;
 
   std::shared_ptr<SegmentedTsdfMap> seg_tsdf_map_;

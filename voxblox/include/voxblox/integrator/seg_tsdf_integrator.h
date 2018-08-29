@@ -93,7 +93,7 @@ class SegmentedTsdfIntegrator {
                                   const Pointcloud& points_C,
                                   ThreadSafeIndex* index_getter);
 
-  LabelIndexMap propagateSegmentLabels(LabelIndexMap &segment_map);
+  LabelIndexMap propagateSegmentLabels(LabelIndexMap& segment_map);
 
   void updateGlobalSegments(const LabelIndexMap& propagated_labels);
 

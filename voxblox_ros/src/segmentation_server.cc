@@ -13,9 +13,7 @@ SegmentationServer::SegmentationServer(const ros::NodeHandle& nh,
   cache_mesh_ = true;
 
   // Publishers for output.
-  segmentation_pointcloud_pub_ =
-      nh_private_.advertise<pcl::PointCloud<pcl::PointXYZI> >(
-          "segmentation_pointcloud", 1, true);
+  segment_pointclouds_pub_ = nh_private_.advertise<voxblox_msgs::PointCloudList>("segment_pointclouds", 1, true);
   segmentation_mesh_pub_ =
       nh_private_.advertise<voxblox_msgs::Mesh>("segmentation_mesh", 1, true);
 
@@ -36,18 +34,6 @@ void SegmentationServer::updateMesh() {
   recolorVoxbloxMeshMsgBySegmentation(&cached_mesh_msg_);
   segmentation_mesh_pub_.publish(cached_mesh_msg_);
   publish_mesh_timer.Stop();
-}
-
-void SegmentationServer::publishPointclouds() {
-  // Create a pointcloud with segmented points.
-  pcl::PointCloud<pcl::PointXYZI> pointcloud;
-
-  //createIntensityPointcloudFromIntensityLayer(*intensity_layer_, &pointcloud);
-
-  pointcloud.header.frame_id = world_frame_;
-  segmentation_pointcloud_pub_.publish(pointcloud);
-
-  TsdfServer::publishPointclouds();
 }
 
 void SegmentationServer::integrateSegmentation(const sensor_msgs::PointCloud2::Ptr pointcloud_msg, const Transformation& T_G_C) {
@@ -133,23 +119,60 @@ void SegmentationServer::processPointCloudMessageAndInsert(const sensor_msgs::Po
                                                            const bool is_freespace_pointcloud) {
   TsdfServer::processPointCloudMessageAndInsert(pointcloud_msg, T_G_C, is_freespace_pointcloud);
   integrateSegmentation(pointcloud_msg, T_G_C);
+}
 
-  pcl::PointCloud<pcl::PointXYZRGB> pointcloud;
+inline void SegmentationServer::fillPointcloudWithMesh(const MeshLayer::ConstPtr& mesh_layer, pcl::PointCloud<pcl::PointNormal>& pointcloud) {
+  pointcloud.clear();
+
+  BlockIndexList mesh_indices;
+  mesh_layer->getAllAllocatedMeshes(&mesh_indices);
+
+  for (const BlockIndex& block_index : mesh_indices) {
+    Mesh::ConstPtr mesh = mesh_layer->getMeshPtrByIndex(block_index);
+
+    if (!mesh->hasVertices()) {
+      continue;
+    }
+
+    CHECK(mesh->hasNormals());
+
+    for (size_t i = 0u; i < mesh->vertices.size(); i++) {
+      pcl::PointNormal point;
+      point.x = mesh->vertices[i].x();
+      point.y = mesh->vertices[i].y();
+      point.z = mesh->vertices[i].z();
+
+      point.normal_x = mesh->normals[i].x();
+      point.normal_y = mesh->normals[i].y();
+      point.normal_z = mesh->normals[i].z();
+      point.curvature = 1.0f;
+
+      pointcloud.push_back(point);
+    }
+  }
+}
+
+void SegmentationServer::publishPointclouds() {
+  voxblox_msgs::PointCloudList pointcloud_list;
+  pcl::PointCloud<pcl::PointNormal> pointcloud_pcl;
 
   for (auto segment_id: seg_tsdf_integrator_->getUpdatedSegments()) {
     if (segment_id == 0)
       continue;
-    pointcloud.clear();
+    pointcloud_pcl.clear();
     MeshLayer::ConstPtr mesh = segment_tool_->meshSegment(seg_tsdf_integrator_->getSegmentBlocksMap(), segment_id);
-    fillPointcloudWithMesh(mesh, ColorMode::kLambertColor, &pointcloud);
+    fillPointcloudWithMesh(mesh, pointcloud_pcl);
 
-    pointcloud.width = 1;
-    pointcloud.height = pointcloud.points.size();
+    sensor_msgs::PointCloud2 pointcloud_ros;
+    pcl::toROSMsg(pointcloud_pcl, pointcloud_ros);
+    pointcloud_ros.header.frame_id = world_frame_;
 
-    if (!pointcloud.points.empty())
-      pcl::io::savePCDFile("/home/marius/pcds/segment_" + std::to_string(segment_id) + ".pcd", pointcloud);
+    // TODO: time stamp of the pointcloud input msg
+    pointcloud_ros.header.stamp = ros::Time::now();
+
+    pointcloud_list.clouds.push_back(pointcloud_ros);
   }
 
+  segment_pointclouds_pub_.publish(pointcloud_list);
 }
-
 }  // namespace voxblox
