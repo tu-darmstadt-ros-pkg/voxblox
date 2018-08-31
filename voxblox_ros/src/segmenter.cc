@@ -10,6 +10,7 @@ Segmenter::Segmenter(const ros::NodeHandle& nh_private) :
   concave_edges_pub_ = nh_private_.advertise<sensor_msgs::Image>("concave_edges", 1, true);
   depth_disc_edges_pub_ = nh_private_.advertise<sensor_msgs::Image>("depth_disc_edges", 1, true);
   rgb_edges_pub_ = nh_private_.advertise<sensor_msgs::Image>("rgb_edges", 1, true);
+  normals_pub_ = nh_private_.advertise<sensor_msgs::Image>("normals", 1, true);
 
   initColorMap(255);
 
@@ -38,11 +39,13 @@ void Segmenter::segmentPointcloud(const pcl::PointCloud<pcl::PointXYZRGB>::Const
   timing::Timer seg_normal_estimation_timer("seg_normal_estimation");
 
   pcl::IntegralImageNormalEstimation<pcl::PointXYZRGB, pcl::Normal> normal_estimation;
-  normal_estimation.setNormalEstimationMethod(normal_estimation.AVERAGE_DEPTH_CHANGE);
-  //normal_estimation.setMaxDepthChangeFactor(0.02f);
-  //normal_estimation.setNormalSmoothingSize(5.0f);
-  //normal_estimation.setBorderPolicy();
+  normal_estimation.setNormalEstimationMethod(normal_estimation.COVARIANCE_MATRIX);
+  normal_estimation.setMaxDepthChangeFactor(0.05f);
+  normal_estimation.setNormalSmoothingSize(10.0f);
+  normal_estimation.setBorderPolicy(normal_estimation.BORDER_POLICY_MIRROR);
   normal_estimation.setInputCloud(cloud);
+  normal_estimation.setRectSize (5, 5);
+  normal_estimation.setDepthDependentSmoothing(false);
   normal_estimation.compute(*normals);
 
   seg_normal_estimation_timer.Stop();
@@ -116,6 +119,7 @@ void Segmenter::segmentPointcloud(const pcl::PointCloud<pcl::PointXYZRGB>::Const
   publishImg(edge_img_depth_disc, pcl_conversions::fromPCL(cloud->header), depth_disc_edges_pub_);
   publishImg(labels, pcl_conversions::fromPCL(cloud->header), segmentation_pub_);
   publishImg(edge_img_canny, pcl_conversions::fromPCL(cloud->header), rgb_edges_pub_);
+  publishNormalsImg(normals, pcl_conversions::fromPCL(cloud->header), normals_pub_);
 }
 
 void Segmenter::detectConcaveBoundaries(const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr cloud,
@@ -256,6 +260,21 @@ void Segmenter::publishImg(const cv::Mat& img, const std_msgs::Header& header, r
     msg = cv_bridge::CvImage(header, "mono8", img).toImageMsg();
 
   pub.publish(msg);
+}
+
+void Segmenter::publishNormalsImg(pcl::PointCloud<pcl::Normal>::ConstPtr normals, const std_msgs::Header& header, ros::Publisher& pub) {
+  if (pub.getNumSubscribers() == 0)
+    return;
+
+  pcl::io::PointCloudImageExtractorFromNormalField<pcl::Normal> img_extr;
+  pcl::PCLImage image;
+  sensor_msgs::Image ros_image;
+  img_extr.extract(*normals, image);
+
+  pcl_conversions::fromPCL(image, ros_image);
+  ros_image.header = header;
+
+  pub.publish(ros_image);
 }
 
 Color Segmenter::getSegmentColor(uint segment) {

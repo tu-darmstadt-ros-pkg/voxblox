@@ -20,6 +20,7 @@
 #include <pcl/segmentation/organized_connected_component_segmentation.h>
 #include <pcl/segmentation/rgb_plane_coefficient_comparator.h>
 #include <pcl/filters/fast_bilateral.h>
+#include <pcl/io/point_cloud_image_extractors.h>
 
 #include <cv_bridge/cv_bridge.h>
 #include <opencv2/opencv.hpp>
@@ -57,6 +58,7 @@ class Segmenter {
   void initColorMap(int num_entries);
 
   void publishImg(const cv::Mat& img, const std_msgs::Header& header, ros::Publisher& pub);
+  void publishNormalsImg(pcl::PointCloud<pcl::Normal>::ConstPtr normals, const std_msgs::Header& header, ros::Publisher& pub);
 
   void detectConcaveBoundaries(const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr cloud,
                            const pcl::PointCloud<pcl::Normal>::ConstPtr normals,
@@ -104,7 +106,7 @@ class Segmenter {
   ros::Publisher concave_edges_pub_;
   ros::Publisher depth_disc_edges_pub_;
   ros::Publisher rgb_edges_pub_;
-
+  ros::Publisher normals_pub_;
 };
 
 }  // namespace voxblox
