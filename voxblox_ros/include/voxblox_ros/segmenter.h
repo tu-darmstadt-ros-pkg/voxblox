@@ -95,8 +95,7 @@ class Segmenter {
 
   std::map<uint, Color> segment_colors_;
 
-  int canny_low_tresh_;
-  int canny_high_tresh_;
+  float canny_sigma_;
   int canny_kernel_size_;
   float min_concavity_;
   float max_dist_step_;

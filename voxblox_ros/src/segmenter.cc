@@ -14,8 +14,7 @@ Segmenter::Segmenter(const ros::NodeHandle& nh_private) :
 
   initColorMap(255);
 
-  nh_private_.param("seg_canny_low_tresh", canny_low_tresh_, 50);
-  nh_private_.param("seg_canny_high_tresh", canny_high_tresh_, 150);
+  nh_private_.param("seg_canny_sigma", canny_sigma_, 0.4f);
   nh_private_.param("seg_canny_kernel_size", canny_kernel_size_, 3);
   nh_private_.param("seg_min_concavity", min_concavity_, 0.97f);
   nh_private_.param("seg_max_dist_step_", max_dist_step_, 0.005f);
@@ -196,6 +195,12 @@ void Segmenter::detectGeometricalBoundaries(const pcl::PointCloud<pcl::PointXYZR
   }
 }
 
+float img_median(const cv::Mat& img) {
+  std::vector<char> vec_from_mat(img.begin<char>(), img.end<char>());
+  std::nth_element(vec_from_mat.begin(), vec_from_mat.begin() + vec_from_mat.size() / 2, vec_from_mat.end());
+  return vec_from_mat[vec_from_mat.size() / 2];
+}
+
 void Segmenter::detectRgbBoundaries(const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr cloud,
                                     cv::Mat& edge_img) {
   int width = static_cast<int>(cloud->width);
@@ -218,10 +223,16 @@ void Segmenter::detectRgbBoundaries(const pcl::PointCloud<pcl::PointXYZRGB>::Con
   cv::cvtColor(rgb_img, gray_img, CV_BGR2GRAY);
 
   // Reduce noise with blurring
-  cv::blur(gray_img, edge_img, cv::Size(3,3));
+  cv::blur(gray_img, edge_img, cv::Size(5,5));
+
+  float median = img_median(edge_img);
+
+  // apply automatic canny edge detection using the image median
+  int lower_tresh = static_cast<int>(std::max(0, static_cast<int>((1.0f - canny_sigma_) * median)));
+  int upper_tresh = static_cast<int>(std::min(255, static_cast<int>((1.0f + canny_sigma_) * median)));
 
   // Canny detector
-  cv::Canny(edge_img, edge_img, canny_low_tresh_, canny_high_tresh_, canny_kernel_size_);
+  cv::Canny(edge_img, edge_img, lower_tresh, upper_tresh, canny_kernel_size_);
   cv::bitwise_not(edge_img, edge_img);
 }
 
