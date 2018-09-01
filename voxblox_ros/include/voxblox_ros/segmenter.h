@@ -76,22 +76,9 @@ class Segmenter {
   void enumerateSegments(const LabelIndexMap& segment_map, const ImageIndexList& segment_centroids,
                          cv::Mat& img);
 
+  cv::Mat colorizeSegmentationImg(const cv::Mat& seg_img, const LabelIndexMap& segment_map);
+
   ros::NodeHandle nh_private_;
-
-  bool verbose_;
-
-  // Global/map coordinate frame. Will always look up TF transforms to this
-  // frame.
-  std::string world_frame_;
-
-  // Delete blocks that are far from the system to help manage memory
-  double max_block_distance_from_body_;
-
-  // Pointcloud visualization settings.
-  double slice_level_;
-
-  // If the system should subscribe to a pointcloud giving points in freespace
-  bool use_freespace_pointcloud_;
 
   std::map<uint, Color> segment_colors_;
 

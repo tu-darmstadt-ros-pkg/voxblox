@@ -43,7 +43,7 @@ void Segmenter::segmentPointcloud(const pcl::PointCloud<pcl::PointXYZRGB>::Const
   normal_estimation.setNormalSmoothingSize(10.0f);
   normal_estimation.setBorderPolicy(normal_estimation.BORDER_POLICY_MIRROR);
   normal_estimation.setInputCloud(cloud);
-  normal_estimation.setRectSize (5, 5);
+  normal_estimation.setRectSize(5, 5);
   normal_estimation.setDepthDependentSmoothing(false);
   normal_estimation.compute(*normals);
 
@@ -69,20 +69,19 @@ void Segmenter::segmentPointcloud(const pcl::PointCloud<pcl::PointXYZRGB>::Const
   // increase the borders a little bit before the segmentation
   cv::morphologyEx(edge_img, edge_img, cv::MORPH_OPEN, cv::Mat(), cv::Point(-1,-1), 1);
 
-  cv::Mat labels;
-  int num_labels = cv::connectedComponents(edge_img, labels, 8);
+  cv::Mat segmentation_img;
+  int num_labels = cv::connectedComponents(edge_img, segmentation_img, 8, CV_16U);
 
   ROS_INFO_STREAM("found " << num_labels << " labels!");
 
   seg_connected_components_timer.Stop();
 
-  labels.convertTo(labels, CV_8U);
-
-  segments.reserve(sub_cloud_indices.size());
-  ImageIndexList segment_centroids(num_labels);
+  ImageIndexList segment_centroids(static_cast<unsigned long>(num_labels));
+  for (size_t i = 0; i < num_labels; num_labels++) {
+    segment_centroids[i] += ImageIndex(0, 0);
+  }
 
   for (size_t i = 0; i < sub_cloud_indices.size(); ++i) {
-
     int sub_cloud_index = sub_cloud_indices[i];
     const pcl::PointXYZRGB& p = cloud->points[sub_cloud_index];
 
@@ -94,31 +93,51 @@ void Segmenter::segmentPointcloud(const pcl::PointCloud<pcl::PointXYZRGB>::Const
 
     int col = sub_cloud_index % width;
     int row = sub_cloud_index / width;
-    uchar label = labels.at<uchar>(row, col);
+    ushort label = segmentation_img.at<ushort>(row, col);
 
     segment_map[label].emplace_back(i);
     segment_centroids[label] += ImageIndex(row, col);
   }
 
-  cv::cvtColor(labels, labels, CV_GRAY2BGR);
+  if (segmentation_pub_.getNumSubscribers() > 0) {
+    cv::Mat segmentation_img_color = colorizeSegmentationImg(segmentation_img, segment_map);
+    enumerateSegments(segment_map, segment_centroids, segmentation_img_color);
 
-  // Generate random colors
-  std::vector<cv::Vec3b> colors;
-
-  for (uint i = 0; i < 256; i++) {
-    Color c = getSegmentColor(i);
-    colors.push_back(cv::Vec3b(c.b, c.g, c.r));
+    publishImg(segmentation_img_color, pcl_conversions::fromPCL(cloud->header), segmentation_pub_);
   }
-
-  cv::LUT(labels, colors, labels);
-  enumerateSegments(segment_map, segment_centroids, labels);
 
   publishImg(edge_img, pcl_conversions::fromPCL(cloud->header), edge_img_pub_);
   publishImg(edge_img_concave, pcl_conversions::fromPCL(cloud->header), concave_edges_pub_);
   publishImg(edge_img_depth_disc, pcl_conversions::fromPCL(cloud->header), depth_disc_edges_pub_);
-  publishImg(labels, pcl_conversions::fromPCL(cloud->header), segmentation_pub_);
   publishImg(edge_img_canny, pcl_conversions::fromPCL(cloud->header), rgb_edges_pub_);
   publishNormalsImg(normals, pcl_conversions::fromPCL(cloud->header), normals_pub_);
+}
+
+cv::Mat Segmenter::colorizeSegmentationImg(const cv::Mat& seg_img, const LabelIndexMap& segment_map) {
+
+  cv::Mat seg_img_color(seg_img);
+  seg_img_color.convertTo(seg_img_color, CV_8U);
+  cv::cvtColor(seg_img_color, seg_img_color, CV_GRAY2BGR);
+
+  std::vector<cv::Vec3b> colors;
+  colors.reserve(segment_map.size());
+
+  // Prepare the colors
+  for (uint i = 0; i < segment_map.size(); i++) {
+    Color c = getSegmentColor(i);
+    colors.push_back(cv::Vec3b(c.b, c.g, c.r));
+  }
+
+  cv::MatIterator_<cv::Vec3b> color_it = seg_img_color.begin<cv::Vec3b>();
+  cv::MatConstIterator_<ushort> gray_it = seg_img.begin<ushort>();
+  for(; color_it != seg_img_color.end<cv::Vec3b>() || gray_it != seg_img.end<ushort>(); ++color_it, ++gray_it )
+  {
+      (*color_it)[0] = colors[(*gray_it)][0];
+      (*color_it)[1] = colors[(*gray_it)][1];
+      (*color_it)[2] = colors[(*gray_it)][2];
+  }
+
+  return seg_img_color;
 }
 
 void Segmenter::detectConcaveBoundaries(const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr cloud,
@@ -195,8 +214,8 @@ void Segmenter::detectGeometricalBoundaries(const pcl::PointCloud<pcl::PointXYZR
   }
 }
 
-float img_median(const cv::Mat& img) {
-  std::vector<char> vec_from_mat(img.begin<char>(), img.end<char>());
+uchar imageMedian(const cv::Mat& img) {
+  std::vector<uchar> vec_from_mat(img.begin<uchar>(), img.end<uchar>());
   std::nth_element(vec_from_mat.begin(), vec_from_mat.begin() + vec_from_mat.size() / 2, vec_from_mat.end());
   return vec_from_mat[vec_from_mat.size() / 2];
 }
@@ -223,16 +242,16 @@ void Segmenter::detectRgbBoundaries(const pcl::PointCloud<pcl::PointXYZRGB>::Con
   cv::cvtColor(rgb_img, gray_img, CV_BGR2GRAY);
 
   // Reduce noise with blurring
-  cv::blur(gray_img, edge_img, cv::Size(5,5));
+  cv::blur(gray_img, gray_img, cv::Size(7,7));
 
-  float median = img_median(edge_img);
+  float median = static_cast<float>(imageMedian(gray_img));
 
   // apply automatic canny edge detection using the image median
   int lower_tresh = static_cast<int>(std::max(0, static_cast<int>((1.0f - canny_sigma_) * median)));
   int upper_tresh = static_cast<int>(std::min(255, static_cast<int>((1.0f + canny_sigma_) * median)));
 
   // Canny detector
-  cv::Canny(edge_img, edge_img, lower_tresh, upper_tresh, canny_kernel_size_);
+  cv::Canny(gray_img, edge_img, lower_tresh, upper_tresh, canny_kernel_size_);
   cv::bitwise_not(edge_img, edge_img);
 }
 
@@ -262,6 +281,9 @@ void Segmenter::getNeighbors(int row, int col, int height, int width, pcl::Point
 }
 
 void Segmenter::publishImg(const cv::Mat& img, const std_msgs::Header& header, ros::Publisher& pub) {
+
+  if (pub.getNumSubscribers() == 0)
+    return;
 
   sensor_msgs::ImagePtr msg;
 
@@ -337,7 +359,7 @@ void Segmenter::initColorMap(int num_entries) {
 void Segmenter::enumerateSegments(const LabelIndexMap& segment_map, const ImageIndexList& segment_centroids, cv::Mat& img) {
 
   const auto font = cv::FONT_HERSHEY_PLAIN;
-  const double font_scale = 2;
+  const double font_scale = 1.5;
   const int font_thickness = 2;
 
   for (auto segment: segment_map) {
@@ -352,7 +374,7 @@ void Segmenter::enumerateSegments(const LabelIndexMap& segment_map, const ImageI
     if (num_pixel < 20)
       continue;
 
-    const std::string text = std::to_string(segment.first);
+    const std::string text = std::to_string(segment_id);
 
     int baseline = 0;
     cv::Size text_size = cv::getTextSize(text, font, font_scale, font_thickness, &baseline);
@@ -360,11 +382,17 @@ void Segmenter::enumerateSegments(const LabelIndexMap& segment_map, const ImageI
     int avg_row = segment_centroids[segment.first](0)/num_pixel;
     int avg_col = segment_centroids[segment.first](1)/num_pixel;
 
-    avg_row -= text_size.height / 2;
+    Color c = getSegmentColor(segment_id);
+    cv::Point p1(avg_col - 0.5f * text_size.width, avg_row + 0.75f * text_size.height);
+    cv::Point p2(avg_col + 0.5f * text_size.width, avg_row - 0.75f * text_size.height);
+    cv::rectangle(img, p1, p2, cv::Scalar(255, 255, 255), CV_FILLED, 0);
+
+    // offset the coordinates so that the text is inside the rectangle
+    avg_row += text_size.height / 2;
     avg_col -= text_size.width / 2;
 
-    cv::putText(img, std::to_string(segment.first), cv::Point(avg_col, avg_row),
-                font, font_scale, cvScalar(255, 255, 255), font_thickness);
+    cv::putText(img, std::to_string(segment_id), cv::Point(avg_col, avg_row),
+                font, font_scale, cvScalar(c.b, c.g, c.r), font_thickness);
   }
 }
 }  // namespace voxblox
