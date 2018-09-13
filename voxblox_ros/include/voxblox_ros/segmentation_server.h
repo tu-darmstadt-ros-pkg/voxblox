@@ -4,6 +4,10 @@
 #include <cv_bridge/cv_bridge.h>
 #include <memory>
 #include <sensor_msgs/Image.h>
+#include <sensor_msgs/CameraInfo.h>
+#include <message_filters/subscriber.h>
+#include <message_filters/sync_policies/approximate_time.h>
+#include <message_filters/synchronizer.h>
 
 #include <voxblox/core/voxel.h>
 #include <voxblox/integrator/intensity_integrator.h>
@@ -24,6 +28,8 @@ class SegmentationServer : public TsdfServer {
  public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
+  typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::PointCloud2, sensor_msgs::Image, sensor_msgs::Image, sensor_msgs::CameraInfo, sensor_msgs::CameraInfo> RgbdSyncPolicy;
+
   SegmentationServer(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private);
   SegmentationServer(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private, const SegmentedTsdfIntegrator::Config& seg_integrator_config);
   virtual ~SegmentationServer() {}
@@ -34,10 +40,14 @@ class SegmentationServer : public TsdfServer {
                                                  const Transformation& T_G_C,
                                                  const bool is_freespace_pointcloud);
 
+  void rgbdCallback(const sensor_msgs::PointCloud2ConstPtr& pointcloud, const sensor_msgs::ImageConstPtr& color_img, const sensor_msgs::ImageConstPtr& depth_img,
+                    const sensor_msgs::CameraInfoConstPtr& color_cam_info, const sensor_msgs::CameraInfoConstPtr& depth_cam_info);
+
  protected:
 
   void recolorVoxbloxMeshMsgBySegmentation(voxblox_msgs::Mesh* mesh_msg);
-  void integrateSegmentation(const sensor_msgs::PointCloud2::Ptr pointcloud_msg, const Transformation& T_G_C);
+  void integrateSegmentation(const sensor_msgs::PointCloud2ConstPtr& pointcloud, const sensor_msgs::ImageConstPtr& color_img, const sensor_msgs::ImageConstPtr& depth_img,
+                             const sensor_msgs::CameraInfoConstPtr& color_cam_info, const sensor_msgs::CameraInfoConstPtr& depth_cam_info);
   inline void fillPointcloudWithMesh(const MeshLayer::ConstPtr& mesh_layer, pcl::PointCloud<pcl::PointNormal>& pointcloud);
   void publishSegmentPointclouds();
 
@@ -50,8 +60,14 @@ class SegmentationServer : public TsdfServer {
   Segmenter segmenter_;
   SegmentTools::Ptr segment_tool_;
 
-  // Subscriber for the camera info needed to do the reprojections
-  ros::Subscriber depth_cam_info_sub_;
+  message_filters::Subscriber<sensor_msgs::PointCloud2> point_cloud_sub_;
+  message_filters::Subscriber<sensor_msgs::Image> color_image_sub_;
+  message_filters::Subscriber<sensor_msgs::CameraInfo> color_info_sub_;
+  message_filters::Subscriber<sensor_msgs::Image> depth_image_sub_;
+  message_filters::Subscriber<sensor_msgs::CameraInfo> depth_info_sub_;
+  message_filters::Synchronizer<RgbdSyncPolicy> msg_sync_;
+
+  Transformation T_G_C_current_;
 };
 
 }  // namespace voxblox

@@ -9,8 +9,11 @@ SegmentationServer::SegmentationServer(const ros::NodeHandle& nh,
 SegmentationServer::SegmentationServer(const ros::NodeHandle& nh,
                                        const ros::NodeHandle& nh_private,
                                        const SegmentedTsdfIntegrator::Config& seg_integrator_config)
-    : TsdfServer(nh, nh_private), segmenter_(nh_private) {
+    : TsdfServer(nh, nh_private), segmenter_(nh_private), point_cloud_sub_(nh_, "pointcloud", 1), color_image_sub_(nh_, "color_image", 1), color_info_sub_(nh_, "color_camera_info", 1), depth_image_sub_(nh_, "depth_image", 1),
+      depth_info_sub_(nh_, "depth_camera_info", 1), msg_sync_(RgbdSyncPolicy(10), point_cloud_sub_, color_image_sub_, depth_image_sub_, color_info_sub_, depth_info_sub_) {
   cache_mesh_ = true;
+
+  msg_sync_.registerCallback(boost::bind(&SegmentationServer::rgbdCallback, this, _1, _2, _3, _4, _5));
 
   // Publishers for output.
   segment_pointclouds_pub_ = nh_private_.advertise<voxblox_msgs::PointCloudList>("segment_pointclouds", 1, true);
@@ -24,6 +27,9 @@ SegmentationServer::SegmentationServer(const ros::NodeHandle& nh,
       seg_tsdf_map_->getTsdfLayerPtr()));
 
   segment_tool_.reset(new SegmentTools(tsdf_map_->getTsdfLayerPtr(), seg_tsdf_map_->getTsdfLayerPtr()));
+
+  // we don't need this subscriber anymore
+  pointcloud_sub_.shutdown();
 }
 
 void SegmentationServer::updateMesh() {
@@ -36,21 +42,14 @@ void SegmentationServer::updateMesh() {
   publish_mesh_timer.Stop();
 }
 
-void SegmentationServer::integrateSegmentation(const sensor_msgs::PointCloud2::Ptr pointcloud_msg, const Transformation& T_G_C) {
-  // Convert the PCL pointcloud into our awesome format.
-  // TODO(helenol): improve...
-  // Horrible hack fix to fix color parsing colors in PCL.
-  for (size_t d = 0; d < pointcloud_msg->fields.size(); ++d) {
-    if (pointcloud_msg->fields[d].name == std::string("rgb")) {
-      pointcloud_msg->fields[d].datatype = sensor_msgs::PointField::FLOAT32;
-    }
-  }
+void SegmentationServer::integrateSegmentation(const sensor_msgs::PointCloud2ConstPtr& pointcloud, const sensor_msgs::ImageConstPtr& color_img, const sensor_msgs::ImageConstPtr& depth_img,
+                                               const sensor_msgs::CameraInfoConstPtr& color_cam_info, const sensor_msgs::CameraInfoConstPtr& depth_cam_info) {
 
-  pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_pcl(new pcl::PointCloud<pcl::PointXYZRGB>);
+  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_pcl(new pcl::PointCloud<pcl::PointXYZ>);
 
-  pcl::fromROSMsg(*pointcloud_msg, *cloud_pcl);
+  pcl::fromROSMsg(*pointcloud, *cloud_pcl);
 
-  pcl::UniformSampling<pcl::PointXYZRGB> uniform_sampling;
+  pcl::UniformSampling<pcl::PointXYZ> uniform_sampling;
   uniform_sampling.setInputCloud(cloud_pcl);
   uniform_sampling.setRadiusSearch(tsdf_map_->voxel_size());
   pcl::PointCloud<int> sub_cloud_indices;
@@ -61,7 +60,7 @@ void SegmentationServer::integrateSegmentation(const sensor_msgs::PointCloud2::P
   points_C.reserve(sub_cloud_indices.size());
   for (size_t i = 0; i < sub_cloud_indices.size(); ++i) {
 
-    const pcl::PointXYZRGB& p = cloud_pcl->points[sub_cloud_indices[i]];
+    const pcl::PointXYZ& p = cloud_pcl->points[sub_cloud_indices[i]];
 
     if (!std::isfinite(p.x) ||
         !std::isfinite(p.y) ||
@@ -73,14 +72,14 @@ void SegmentationServer::integrateSegmentation(const sensor_msgs::PointCloud2::P
   }
 
   LabelIndexMap segment_map;
-  segmenter_.segmentPointcloud(cloud_pcl, sub_cloud_indices, segment_map);
+  segmenter_.segmentRgbdImage(color_img, color_cam_info, depth_img, depth_cam_info, cloud_pcl, sub_cloud_indices, segment_map);
 
   timing::Timer seg_integrate_timer("seg_integrate_segmentation");
-  seg_tsdf_integrator_->integrateSegmentedPointCloud(T_G_C, points_C, segment_map, segmenter_.getColorMap());
+  seg_tsdf_integrator_->integrateSegmentedPointCloud(T_G_C_current_, points_C, segment_map, segmenter_.getColorMap());
   seg_integrate_timer.Stop();
 
   seg_tsdf_map_->getTsdfLayerPtr()->removeDistantBlocks(
-      T_G_C.getPosition(), max_block_distance_from_body_);
+      T_G_C_current_.getPosition(), max_block_distance_from_body_);
 }
 
 void SegmentationServer::recolorVoxbloxMeshMsgBySegmentation(voxblox_msgs::Mesh* mesh_msg) {
@@ -118,7 +117,9 @@ void SegmentationServer::processPointCloudMessageAndInsert(const sensor_msgs::Po
                                                            const Transformation& T_G_C,
                                                            const bool is_freespace_pointcloud) {
   TsdfServer::processPointCloudMessageAndInsert(pointcloud_msg, T_G_C, is_freespace_pointcloud);
-  integrateSegmentation(pointcloud_msg, T_G_C);
+
+  // remember the latest transform for integrating the segmentation
+  T_G_C_current_ = T_G_C;
 }
 
 inline void SegmentationServer::fillPointcloudWithMesh(const MeshLayer::ConstPtr& mesh_layer, pcl::PointCloud<pcl::PointNormal>& pointcloud) {
@@ -174,5 +175,15 @@ void SegmentationServer::publishPointclouds() {
   }
 
   segment_pointclouds_pub_.publish(pointcloud_list);
+}
+
+void SegmentationServer::rgbdCallback(const sensor_msgs::PointCloud2ConstPtr& pointcloud, const sensor_msgs::ImageConstPtr& color_img, const sensor_msgs::ImageConstPtr& depth_img,
+                                      const sensor_msgs::CameraInfoConstPtr& color_cam_info, const sensor_msgs::CameraInfoConstPtr& depth_cam_info) {
+
+  // TODO: get rid of the copy
+  sensor_msgs::PointCloud2::Ptr cloud = boost::make_shared<sensor_msgs::PointCloud2>(*pointcloud);
+
+  insertPointcloud(cloud);
+  integrateSegmentation(cloud, color_img, depth_img, color_cam_info, depth_cam_info);
 }
 }  // namespace voxblox

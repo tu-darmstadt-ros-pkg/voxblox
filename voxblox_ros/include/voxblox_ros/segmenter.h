@@ -8,6 +8,9 @@
 #include <pcl_ros/point_cloud.h>
 #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
+#include <sensor_msgs/Image.h>
+#include <sensor_msgs/CameraInfo.h>
+
 #include <std_srvs/Empty.h>
 #include <visualization_msgs/MarkerArray.h>
 #include <memory>
@@ -22,9 +25,13 @@
 #include <pcl/filters/fast_bilateral.h>
 #include <pcl/io/point_cloud_image_extractors.h>
 
-#include <cv_bridge/cv_bridge.h>
 #include <opencv2/opencv.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/photo.hpp>
+#include <cv_bridge/cv_bridge.h>
+#include <image_geometry/pinhole_camera_model.h>
+#include <opencv2/rgbd.hpp>
 
 #include <voxblox/core/tsdf_map.h>
 #include <voxblox/integrator/tsdf_integrator.h>
@@ -47,7 +54,12 @@ class Segmenter {
 
   Segmenter(const ros::NodeHandle& nh);
 
-  void segmentPointcloud(const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr cloud, const pcl::PointCloud<int>& sub_cloud_indices, LabelIndexMap& segment_map);
+  typedef boost::shared_ptr<cv_bridge::CvImage> CvImagePtr;
+  typedef boost::shared_ptr<cv_bridge::CvImage const> CvImageConstPtr;
+
+  void segmentRgbdImage(const sensor_msgs::ImageConstPtr& color_img, const sensor_msgs::CameraInfoConstPtr& color_cam_info,
+                        const sensor_msgs::ImageConstPtr& depth_img, const sensor_msgs::CameraInfoConstPtr& depth_cam_info,
+                        const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& cloud, const pcl::PointCloud<int>& sub_cloud_indices, LabelIndexMap& segment_map);
 
   Color getSegmentColor(uint segment);
 
@@ -59,24 +71,21 @@ class Segmenter {
 
   void publishImg(const cv::Mat& img, const std_msgs::Header& header, ros::Publisher& pub);
   void publishNormalsImg(pcl::PointCloud<pcl::Normal>::ConstPtr normals, const std_msgs::Header& header, ros::Publisher& pub);
+  void publishNormalsImg(const cv::Mat& normals, const std_msgs::Header& header, ros::Publisher& pub);
 
-  void detectConcaveBoundaries(const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr cloud,
-                           const pcl::PointCloud<pcl::Normal>::ConstPtr normals,
-                           cv::Mat &edge_img);
+  cv::Mat detectConcaveBoundaries(const cv::Mat& points, const cv::Mat& normals);
+  cv::Mat detectGeometricalBoundaries(const cv::Mat& points, const cv::Mat& normals);
+  cv::Mat detectRgbBoundaries(const cv::Mat& color_img);
+  cv::Mat inpaintDepth(const cv::Mat& depth_img);
+  cv::Mat filterImage(cv::Mat& depth_img);
 
-  void detectGeometricalBoundaries(const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr cloud,
-                           const pcl::PointCloud<pcl::Normal>::ConstPtr normals,
-                           cv::Mat& edge_img);
-
-  void detectRgbBoundaries(const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr cloud,
-                           cv::Mat& edge_img);
-
-  void getNeighbors(int row, int col, int height, int width, pcl::PointIndices& neighbors);
+  void getNeighbors(int row, int col, int height, int width, std::vector<cv::Point2i>& neighbors);
 
   void enumerateSegments(const LabelIndexMap& segment_map, const ImageIndexList& segment_centroids,
                          cv::Mat& img);
 
   cv::Mat colorizeSegmentationImg(const cv::Mat& seg_img, const LabelIndexMap& segment_map);
+  cv::Mat estimateNormals(const cv::Mat& points_3d, const cv::Matx33d& intrinsic_matrix);
 
   ros::NodeHandle nh_private_;
 
@@ -84,8 +93,8 @@ class Segmenter {
 
   float canny_sigma_;
   int canny_kernel_size_;
-  float min_concavity_;
-  float max_dist_step_;
+  double min_concavity_;
+  double max_dist_step_;
 
   ros::Publisher edge_img_pub_;
   ros::Publisher segmentation_pub_;
@@ -93,6 +102,7 @@ class Segmenter {
   ros::Publisher depth_disc_edges_pub_;
   ros::Publisher rgb_edges_pub_;
   ros::Publisher normals_pub_;
+  ros::Publisher depth_inpainted_pub_;
 };
 
 }  // namespace voxblox

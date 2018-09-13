@@ -6,6 +6,9 @@ catkin_simple(ALL_DEPS_REQUIRED)
 
 add_definitions(-std=c++11 -Wall -Wextra)
 
+find_package(OpenCV REQUIRED)
+include_directories(${OpenCV_INCLUDE_DIRS})
+
 #############
 # LIBRARIES #
 #############
@@ -19,6 +22,8 @@ cs_add_library(${PROJECT_NAME}
   src/segmentation_server.cc
   src/segmenter.cc
 )
+
+target_link_libraries(${PROJECT_NAME} ${OpenCV_LIBRARIES})
 
 ############
 # BINARIES #
@@ -57,7 +62,8 @@ target_link_libraries(visualize_tsdf ${PROJECT_NAME})
 cs_add_executable(segmentation_server
   src/segmentation_server_node.cc
 )
-target_link_libraries(segmentation_server ${PROJECT_NAME})
+
+target_link_libraries(segmentation_server ${PROJECT_NAME} ${OpenCV_LIBRARIES})
 
 ##########
 # EXPORT #

@@ -23,6 +23,7 @@
   <depend>pcl_ros</depend>
   <depend>sensor_msgs</depend>
   <depend>tf</depend>
+  <depend>image_geometry</depend>
 
   <depend>voxblox</depend>
   <depend>voxblox_msgs</depend>
