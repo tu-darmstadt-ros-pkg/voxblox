@@ -17,8 +17,8 @@ Segmenter::Segmenter(const ros::NodeHandle& nh_private) :
 
   nh_private_.param("seg_canny_sigma", canny_sigma_, 0.4f);
   nh_private_.param("seg_canny_kernel_size", canny_kernel_size_, 3);
-  nh_private_.param("seg_min_concavity", min_concavity_, 0.97);
-  nh_private_.param("seg_max_dist_step_", max_dist_step_, 0.005);
+  nh_private_.param("seg_min_concavity", min_concavity_, 0.97f);
+  nh_private_.param("seg_max_dist_step_", max_dist_step_, 0.005f);
 }
 
 void Segmenter::segmentRgbdImage(const sensor_msgs::ImageConstPtr& color_img_msg, const sensor_msgs::CameraInfoConstPtr& color_cam_info_msg,
@@ -67,7 +67,8 @@ void Segmenter::segmentRgbdImage(const sensor_msgs::ImageConstPtr& color_img_msg
   edge_img = cv::min(edge_img, edge_img_canny);
 
   // increase the borders a little bit before the segmentation
-  cv::morphologyEx(edge_img, edge_img, cv::MORPH_OPEN, cv::Mat(), cv::Point(-1,-1), 1);
+  cv::Mat kernel = cv::Mat::ones(2, 2, CV_8U);
+  cv::morphologyEx(edge_img, edge_img, cv::MORPH_OPEN, kernel, cv::Point(-1,-1), 1);
 
   cv::Mat segmentation_img;
   int num_labels = cv::connectedComponents(edge_img, segmentation_img, 8, CV_16U);
@@ -119,10 +120,12 @@ cv::Mat Segmenter::estimateNormals(const cv::Mat& points_3d, const cv::Matx33d& 
   timing::Timer seg_normal_estimation_timer("seg_normal_estimation");
   cv::Mat normals;
 
-  int window_size = 5;
+  int window_size = 3;
   cv::rgbd::RgbdNormals ocv_normals_estimation(points_3d.rows, points_3d.cols, CV_32F, intrinsic_matrix,
                                                window_size, cv::rgbd::RgbdNormals::RGBD_NORMALS_METHOD_FALS);
   ocv_normals_estimation(points_3d, normals);
+
+  cv::GaussianBlur(normals, normals, cv::Size(5,5), 0);
 
   seg_normal_estimation_timer.Stop();
 
@@ -154,8 +157,8 @@ cv::Mat Segmenter::filterImage(cv::Mat& depth_img) {
   cv::Mat depth_img_smoothed;
 
   int d = 5;
-  double 	sigma_color = 25.0;
-  double 	sigma_space = 25.0;
+  double 	sigma_color = 50.0;
+  double 	sigma_space = 50.0;
   cv::bilateralFilter(depth_img, depth_img_smoothed, d, sigma_color, sigma_space);
   depth_img_smoothed.convertTo(depth_img_smoothed, CV_16U);
   depth_img.convertTo(depth_img, CV_16U);
@@ -218,13 +221,13 @@ cv::Mat Segmenter::detectGeometricalBoundaries(const cv::Mat& points, const cv::
       double max_dist = -std::numeric_limits<double>::max();
 
       const cv::Point3f& p = points.at<cv::Point3f>(row, col);
-      const cv::Point3d& n = normals.at<cv::Point3d>(row, col);
+      const cv::Point3f& n = normals.at<cv::Point3f>(row, col);
 
       for (const cv::Point2i& i: neighbors) {
         const cv::Point3f& p_i = points.at<cv::Point3f>(i);
 
         cv::Point3d diff = p_i - p;
-        max_dist = std::max(std::abs(diff.ddot(n)), max_dist);
+        max_dist = std::max(std::abs(diff.dot(n)), max_dist);
       }
 
       if (max_dist <= max_dist_step_)
@@ -261,22 +264,22 @@ cv::Mat Segmenter::detectConcaveBoundaries(const cv::Mat& points, const cv::Mat&
 
       getNeighbors(row, col, height, width, neighbors);
 
-      double min_concavity = std::numeric_limits<double>::max();
+      float min_concavity = std::numeric_limits<float>::max();
 
       const cv::Point3f& p = points.at<cv::Point3f>(row, col);
-      const cv::Point3d& n = normals.at<cv::Point3d>(row, col);
+      const cv::Point3f& n = normals.at<cv::Point3f>(row, col);
 
       for (const cv::Point2i& i: neighbors) {
         const cv::Point3f& p_i = points.at<cv::Point3f>(i);
         cv::Point3d diff = p_i - p;
 
-        if (diff.ddot(n) > 0) {
-          min_concavity = std::min(1.0, min_concavity);
+        if (diff.dot(n) > 0) {
+          min_concavity = std::min(1.0f, min_concavity);
         }
         else {
-          const cv::Point3d& n_i = normals.at<cv::Point3d>(i);
+          const cv::Point3f& n_i = normals.at<cv::Point3f>(i);
 
-          min_concavity = std::min(n.ddot(n_i), min_concavity);
+          min_concavity = std::min(n.dot(n_i), min_concavity);
         }
       }
 
@@ -401,7 +404,7 @@ void Segmenter::publishNormalsImg(const cv::Mat& normals, const std_msgs::Header
   for(int y = 0; y < normals.rows; y++) {
     for(int x = 0; x < normals.cols; x++) {
       pcl::Normal& pcl_normal = pcl_normals->at(x, y);
-      const cv::Point3d& normal = normals.at<cv::Point3d>(y, x);
+      const cv::Point3f& normal = normals.at<cv::Point3f>(y, x);
 
       pcl_normal.normal_x = static_cast<float>(normal.x);
       pcl_normal.normal_y = static_cast<float>(normal.y);
