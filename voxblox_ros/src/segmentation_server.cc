@@ -113,11 +113,7 @@ void SegmentationServer::recolorVoxbloxMeshMsgBySegmentation(voxblox_msgs::Mesh*
   }
 }
 
-void SegmentationServer::processPointCloudMessageAndInsert(const sensor_msgs::PointCloud2::Ptr& pointcloud_msg,
-                                                           const Transformation& T_G_C,
-                                                           const bool is_freespace_pointcloud) {
-  TsdfServer::processPointCloudMessageAndInsert(pointcloud_msg, T_G_C, is_freespace_pointcloud);
-
+void SegmentationServer::newPoseCallback(const Transformation& T_G_C) {
   // remember the latest transform for integrating the segmentation
   T_G_C_current_ = T_G_C;
 }

@@ -36,9 +36,7 @@ class SegmentationServer : public TsdfServer {
 
   virtual void updateMesh();
   virtual void publishPointclouds();
-  virtual void processPointCloudMessageAndInsert(const sensor_msgs::PointCloud2::Ptr& pointcloud_msg,
-                                                 const Transformation& T_G_C,
-                                                 const bool is_freespace_pointcloud);
+  virtual void newPoseCallback(const Transformation& T_G_C);
 
   void rgbdCallback(const sensor_msgs::PointCloud2ConstPtr& pointcloud, const sensor_msgs::ImageConstPtr& color_img, const sensor_msgs::ImageConstPtr& depth_img,
                     const sensor_msgs::CameraInfoConstPtr& color_cam_info, const sensor_msgs::CameraInfoConstPtr& depth_cam_info);
