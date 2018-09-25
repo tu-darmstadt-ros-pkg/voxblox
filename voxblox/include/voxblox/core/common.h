@@ -62,6 +62,7 @@ typedef IndexVector BlockIndexList;
 typedef IndexVector VoxelIndexList;
 typedef AlignedVector<ImageIndex> ImageIndexList;
 typedef AlignedVector<LongIndex> LongIndexVector;
+typedef LongIndexVector GlobalIndexVector;
 
 struct IndexHash {
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
