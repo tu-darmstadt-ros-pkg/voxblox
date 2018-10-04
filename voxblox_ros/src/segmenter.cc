@@ -18,7 +18,7 @@ Segmenter::Segmenter(const ros::NodeHandle& nh_private) :
   nh_private_.param("seg_canny_sigma", canny_sigma_, 0.4f);
   nh_private_.param("seg_canny_kernel_size", canny_kernel_size_, 3);
   nh_private_.param("seg_min_concavity", min_concavity_, 0.97f);
-  nh_private_.param("seg_max_dist_step_", max_dist_step_, 0.005f);
+  nh_private_.param("seg_max_dist_step_", max_dist_step_, 0.005);
 }
 
 void Segmenter::segmentRgbdImage(const sensor_msgs::ImageConstPtr& color_img_msg, const sensor_msgs::CameraInfoConstPtr& color_cam_info_msg,
@@ -77,6 +77,10 @@ void Segmenter::segmentRgbdImage(const sensor_msgs::ImageConstPtr& color_img_msg
 
   seg_connected_components_timer.Stop();
 
+  int radius = 5;
+  double max_distance = 0.1;
+  assignEdgePoints(radius, max_distance, points3d, segmentation_img);
+
   ImageIndexList segment_centroids(static_cast<unsigned long>(num_labels));
   for (size_t i = 0; i < num_labels; num_labels++) {
     segment_centroids[i] += ImageIndex(0, 0);
@@ -120,7 +124,7 @@ cv::Mat Segmenter::estimateNormals(const cv::Mat& points_3d, const cv::Matx33d& 
   timing::Timer seg_normal_estimation_timer("seg_normal_estimation");
   cv::Mat normals;
 
-  int window_size = 3;
+  int window_size = 5;
   cv::rgbd::RgbdNormals ocv_normals_estimation(points_3d.rows, points_3d.cols, CV_32F, intrinsic_matrix,
                                                window_size, cv::rgbd::RgbdNormals::RGBD_NORMALS_METHOD_FALS);
   ocv_normals_estimation(points_3d, normals);
@@ -206,13 +210,6 @@ cv::Mat Segmenter::detectGeometricalBoundaries(const cv::Mat& points, const cv::
 
   cv::Mat edge_img(height, width, CV_8UC1, cv::Scalar(0));
 
-  ROS_INFO_STREAM("points channels: " << points.channels() );
-  ROS_INFO_STREAM("points type: " << points.type());
-  ROS_INFO_STREAM("points width: " << width);
-  ROS_INFO_STREAM("points height: " << height);
-  ROS_INFO_STREAM("normals channels: " << normals.channels() );
-  ROS_INFO_STREAM("normals type: " << normals.type());
-
   for (int row = 0; row < height; row++) {
     for (int col = 0; col < width; col++) {
 
@@ -251,13 +248,6 @@ cv::Mat Segmenter::detectConcaveBoundaries(const cv::Mat& points, const cv::Mat&
   int height = points.rows;
 
   cv::Mat edge_img(height, width, CV_8UC1, cv::Scalar(0));
-
-  ROS_INFO_STREAM("points channels: " << points.channels() );
-  ROS_INFO_STREAM("points type: " << points.type());
-  ROS_INFO_STREAM("points width: " << width);
-  ROS_INFO_STREAM("points height: " << height);
-  ROS_INFO_STREAM("normals channels: " << normals.channels() );
-  ROS_INFO_STREAM("normals type: " << normals.type());
 
   for (int row = 0; row < height; row++) {
     for (int col = 0; col < width; col++) {
@@ -500,4 +490,62 @@ void Segmenter::enumerateSegments(const LabelIndexMap& segment_map, const ImageI
                 font, font_scale, cvScalar(c.b, c.g, c.r), font_thickness);
   }
 }
+
+void Segmenter::assignEdgePoints(int radius, double max_distance, const cv::Mat& points_3d, cv::Mat& img) {
+
+  double minVal;
+  double maxVal;
+  cv::Point minLoc;
+  cv::Point maxLoc;
+
+  cv::minMaxLoc(img, &minVal, &maxVal, &minLoc, &maxLoc );
+
+  for (int row = 0; row < img.rows; row++) {
+    for (int col = 0; col < img.cols; col++) {
+      if (img.at<ushort>(row, col) == 0) {
+        img.at<ushort>(row, col) = assignEdgePoint(row, col, radius, max_distance, points_3d, img);
+      }
+    }
+  }
+}
+
+ushort Segmenter::assignEdgePoint(int row, int col, int radius, double max_distance, const cv::Mat& points_3d, const cv::Mat& img) {
+  ushort segment_id = 0;
+
+  int radius_sqr = radius * radius;
+  double min_distance = max_distance;
+
+  const cv::Point3f& point = points_3d.at<cv::Point3f>(row, col);
+
+  for (int iy = -radius; iy <= radius; iy++) {
+    int dx = static_cast<int>(sqrt(radius_sqr - iy * iy));
+    for (int ix = - dx; ix <= dx; ix++) {
+
+      int circle_row = row + ix;
+      int circle_col = col + iy;
+
+      if (circle_row == row && circle_col == col)
+        continue;
+
+      if (circle_row < 0 || circle_col < 0 || circle_row >= points_3d.rows || circle_col >= points_3d.cols)
+        continue;
+
+      const cv::Point3f& candidate = points_3d.at<cv::Point3f>(circle_row, circle_col);
+      double dist = cv::norm(candidate-point);
+
+      if (std::isfinite(dist) && dist <= min_distance) {
+        ushort id = img.at<ushort>(circle_row, circle_col);
+
+        if (id != 0) {
+          segment_id = id;
+          min_distance = dist;
+        }
+      }
+    }
+  }
+
+  return segment_id;
+}
+
+
 }  // namespace voxblox

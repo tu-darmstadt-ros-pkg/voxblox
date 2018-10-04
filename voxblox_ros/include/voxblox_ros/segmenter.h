@@ -87,6 +87,9 @@ class Segmenter {
   cv::Mat colorizeSegmentationImg(const cv::Mat& seg_img, const LabelIndexMap& segment_map);
   cv::Mat estimateNormals(const cv::Mat& points_3d, const cv::Matx33d& intrinsic_matrix);
 
+  void assignEdgePoints(int radius, double max_distance, const cv::Mat& points_3d, cv::Mat& img);
+  ushort assignEdgePoint(int row, int col, int radius, double max_distance, const cv::Mat& points_3d, const cv::Mat& img);
+
   ros::NodeHandle nh_private_;
 
   std::map<uint, Color> segment_colors_;
@@ -94,7 +97,7 @@ class Segmenter {
   float canny_sigma_;
   int canny_kernel_size_;
   float min_concavity_;
-  float max_dist_step_;
+  double max_dist_step_;
 
   ros::Publisher edge_img_pub_;
   ros::Publisher segmentation_pub_;
