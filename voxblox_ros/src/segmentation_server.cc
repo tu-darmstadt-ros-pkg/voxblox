@@ -9,11 +9,17 @@ SegmentationServer::SegmentationServer(const ros::NodeHandle& nh,
 SegmentationServer::SegmentationServer(const ros::NodeHandle& nh,
                                        const ros::NodeHandle& nh_private,
                                        const SegmentedTsdfIntegrator::Config& seg_integrator_config)
-    : TsdfServer(nh, nh_private), segmenter_(nh_private), point_cloud_sub_(nh_, "pointcloud", 1), color_image_sub_(nh_, "color_image", 1), color_info_sub_(nh_, "color_camera_info", 1), depth_image_sub_(nh_, "depth_image", 1),
-      depth_info_sub_(nh_, "depth_camera_info", 1), msg_sync_(RgbdSyncPolicy(10), point_cloud_sub_, color_image_sub_, depth_image_sub_, color_info_sub_, depth_info_sub_) {
+    : TsdfServer(nh, nh_private), segmenter_(nh_private), color_image_sub_(nh_, "color_image", 1), color_info_sub_(nh_, "color_camera_info", 1), depth_image_sub_(nh_, "depth_image", 1),
+      depth_info_sub_(nh_, "depth_camera_info", 1), msg_sync_(RgbdSyncPolicy(10), color_image_sub_, depth_image_sub_, color_info_sub_, depth_info_sub_) {
   cache_mesh_ = true;
 
-  msg_sync_.registerCallback(boost::bind(&SegmentationServer::rgbdCallback, this, _1, _2, _3, _4, _5));
+  msg_sync_.setAgePenalty(0.5);
+  msg_sync_.setMaxIntervalDuration(ros::Duration(0.1));
+  msg_sync_.registerCallback(boost::bind(&SegmentationServer::rgbdCallback, this, _1, _2, _3, _4));
+
+  // TODO: why is this needed in order to work?
+  for (int i = 0; i < 9; i++)
+    msg_sync_.setInterMessageLowerBound(i, ros::Duration(1.0));
 
   // Publishers for output.
   segment_pointclouds_pub_ = nh_private_.advertise<voxblox_msgs::PointCloudList>("segment_pointclouds", 1, true);
@@ -173,13 +179,79 @@ void SegmentationServer::publishPointclouds() {
   segment_pointclouds_pub_.publish(pointcloud_list);
 }
 
-void SegmentationServer::rgbdCallback(const sensor_msgs::PointCloud2ConstPtr& pointcloud, const sensor_msgs::ImageConstPtr& color_img, const sensor_msgs::ImageConstPtr& depth_img,
+void SegmentationServer::rgbdCallback(const sensor_msgs::ImageConstPtr& color_img, const sensor_msgs::ImageConstPtr& depth_img,
                                       const sensor_msgs::CameraInfoConstPtr& color_cam_info, const sensor_msgs::CameraInfoConstPtr& depth_cam_info) {
 
-  // TODO: get rid of the copy
-  sensor_msgs::PointCloud2::Ptr cloud = boost::make_shared<sensor_msgs::PointCloud2>(*pointcloud);
+  sensor_msgs::PointCloud2::Ptr cloud = boost::make_shared<sensor_msgs::PointCloud2>();
+  cloud->header = depth_img->header; // Use depth image time stamp
+  cloud->height = depth_img->height;
+  cloud->width  = depth_img->width;
+  cloud->is_dense = false;
+  cloud->is_bigendian = false;
+
+
+  sensor_msgs::PointCloud2Modifier pcd_modifier(*cloud);
+  pcd_modifier.setPointCloud2FieldsByString(2, "xyz", "rgb");
+
+  convertToCloud(depth_img, color_img, depth_cam_info, cloud);
+
+  ROS_INFO_STREAM("cloud header: " << cloud->header);
+  ROS_INFO_STREAM("depth img header: " << depth_img->header);
+  ROS_INFO_STREAM("color img header: " << color_img->header);
 
   insertPointcloud(cloud);
   integrateSegmentation(cloud, color_img, depth_img, color_cam_info, depth_cam_info);
 }
+
+void SegmentationServer::convertToCloud(const sensor_msgs::ImageConstPtr& depth_msg,
+                                        const sensor_msgs::ImageConstPtr& rgb_msg,
+                                        const sensor_msgs::CameraInfoConstPtr& depth_cam_info,
+                                        const sensor_msgs::PointCloud2::Ptr& cloud) {
+  // Use correct principal point from calibration
+  float center_x = static_cast<float>(depth_cam_info->K[2]);
+  float center_y = static_cast<float>(depth_cam_info->K[5]);
+
+  float unit_scaling = 0.001f;
+  float f_x = static_cast<float>(depth_cam_info->K[0]);
+  float f_y = static_cast<float>(depth_cam_info->K[4]);
+
+  const uint16_t* depth_row = reinterpret_cast<const uint16_t*>(&depth_msg->data[0]);
+  int row_step = depth_msg->step / sizeof(uint16_t);
+  const uint8_t* rgb = &rgb_msg->data[0];
+  int rgb_skip = rgb_msg->step - rgb_msg->width * 3;
+
+  sensor_msgs::PointCloud2Iterator<float> iter_x(*cloud, "x");
+  sensor_msgs::PointCloud2Iterator<float> iter_y(*cloud, "y");
+  sensor_msgs::PointCloud2Iterator<float> iter_z(*cloud, "z");
+  sensor_msgs::PointCloud2Iterator<uint8_t> iter_r(*cloud, "r");
+  sensor_msgs::PointCloud2Iterator<uint8_t> iter_g(*cloud, "g");
+  sensor_msgs::PointCloud2Iterator<uint8_t> iter_b(*cloud, "b");
+  sensor_msgs::PointCloud2Iterator<uint8_t> iter_a(*cloud, "a");
+
+  for (int v = 0; v < int(cloud->height); ++v, depth_row += row_step, rgb += rgb_skip)
+  {
+    for (int u = 0; u < int(cloud->width); ++u, rgb += 3, ++iter_x, ++iter_y, ++iter_z, ++iter_a, ++iter_r, ++iter_g, ++iter_b)
+    {
+      uint16_t depth = depth_row[u];
+      float scaled_depth = unit_scaling * depth;
+
+      // Check for invalid measurements
+      if (depth == 0) {
+        *iter_x = *iter_y = *iter_z = NAN;
+      } else {
+        // Fill in XYZ
+        *iter_x = (u - center_x) * scaled_depth / f_x;
+        *iter_y = (v - center_y) * scaled_depth / f_y;
+        *iter_z = scaled_depth;
+      }
+
+      // Fill in color
+      *iter_a = 255;
+      *iter_r = rgb[0];
+      *iter_g = rgb[1];
+      *iter_b = rgb[2];
+    }
+  }
+}
+
 }  // namespace voxblox
