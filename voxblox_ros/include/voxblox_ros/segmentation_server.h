@@ -20,8 +20,11 @@
 #include "voxblox_ros/segmenter.h"
 
 #include <voxblox_msgs/PointCloudList.h>
+#include <voxblox_msgs/ExtractSegment.h>
+#include <voxblox_msgs/ExtractSegmentFromRay.h>
 
 #include <pcl/keypoints/uniform_sampling.h>
+#include <pcl/common/common.h>
 
 namespace voxblox {
 
@@ -42,6 +45,9 @@ class SegmentationServer : public TsdfServer {
   void rgbdCallback(const sensor_msgs::ImageConstPtr& color_img, const sensor_msgs::ImageConstPtr& depth_img,
                     const sensor_msgs::CameraInfoConstPtr& color_cam_info, const sensor_msgs::CameraInfoConstPtr& depth_cam_info);
 
+  bool extractSegmentCloud(voxblox_msgs::ExtractSegmentRequest& req, voxblox_msgs::ExtractSegmentResponse& res);
+  bool extractSegmentCloudFromRay(voxblox_msgs::ExtractSegmentFromRayRequest& req, voxblox_msgs::ExtractSegmentFromRayResponse& res);
+
  protected:
 
   void recolorVoxbloxMeshMsgBySegmentation(voxblox_msgs::Mesh* mesh_msg);
@@ -55,9 +61,12 @@ class SegmentationServer : public TsdfServer {
                       const sensor_msgs::CameraInfoConstPtr& depth_cam_info,
                       const sensor_msgs::PointCloud2::Ptr& cloud);
 
+  bool extractSegmentCloud(Label segment_id, sensor_msgs::PointCloud2& cloud);
+
   // Publish markers for visualization.
   ros::Publisher segment_pointclouds_pub_;
   ros::Publisher segmentation_mesh_pub_;
+  ros::Publisher extracted_seg_pub_;
 
   std::shared_ptr<SegmentedTsdfMap> seg_tsdf_map_;
   std::unique_ptr<SegmentedTsdfIntegrator> seg_tsdf_integrator_;
@@ -71,6 +80,9 @@ class SegmentationServer : public TsdfServer {
   message_filters::Synchronizer<RgbdSyncPolicy> msg_sync_;
 
   Transformation T_G_C_current_;
+
+  ros::ServiceServer segment_cloud_service_;
+  ros::ServiceServer segment_cloud_from_ray_service_;
 };
 
 }  // namespace voxblox

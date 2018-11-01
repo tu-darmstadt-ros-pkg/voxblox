@@ -75,4 +75,18 @@ MeshLayer::ConstPtr SegmentTools::meshSegment(const LabelBlockIndexesMap& segmen
 
   return mesh_layer_;
 }
+
+Label SegmentTools::getSegmentIdFromRay(const Point& origin, const Point& direction) {
+
+  Point surface_intersection;
+  float max_distance = 2.0;
+  bool success = getSurfaceDistanceAlongRay<TsdfVoxel>(*tsdf_layer_, origin, direction,
+                                                       max_distance, &surface_intersection);
+  if (success) {
+    SegmentedVoxel* voxel = seg_layer_->getVoxelPtrByCoordinates(surface_intersection);
+    return voxel->segment_id;
+  } else {
+    return 0;
+  }
+}
 }  // namespace voxblox

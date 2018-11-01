@@ -5,6 +5,7 @@
 #include "voxblox/core/voxel.h"
 #include "voxblox/core/layer.h"
 #include "voxblox/mesh/mesh_integrator.h"
+#include "voxblox/utils/distance_utils.h"
 
 namespace voxblox {
 
@@ -17,7 +18,7 @@ public:
   SegmentTools(Layer<TsdfVoxel>* tsdf_layer, Layer<SegmentedVoxel>* seg_layer);
 
   MeshLayer::ConstPtr meshSegment(const LabelBlockIndexesMap& segment_blocks_map, Label segment);
-
+  Label getSegmentIdFromRay(const Point& origin, const Point& direction);
 
 private:
 
