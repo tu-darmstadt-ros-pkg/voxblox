@@ -118,6 +118,9 @@ inline SegmentedTsdfIntegrator::Config getSegTsdfIntegratorConfigFromRosParam(
   nh_private.param("seg_voxel_prop_radius",
                    integrator_config.voxel_prop_radius,
                    integrator_config.voxel_prop_radius);
+  nh_private.param("write_debug_data",
+                   integrator_config.write_debug_data_,
+                   integrator_config.write_debug_data_);
 
   int min_segment_pixel_size = static_cast<int>(integrator_config.min_segment_pixel_size);
   int min_merge_confidence = static_cast<int>(integrator_config.min_merge_confidence);

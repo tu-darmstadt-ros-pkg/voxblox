@@ -146,9 +146,46 @@ void SegmentedTsdfIntegrator::integrateSegmentedPointCloud(const Transformation&
   seg_update_global_segments_timer.Stop();
 
   if (config_.write_debug_data_) {
+    pcl::PointCloud<pcl::PointXYZRGB> rgbd_segmentation;
     pcl::PointCloud<pcl::PointXYZRGB> visible_points;
     pcl::PointCloud<pcl::PointXYZRGB> prop_points_merged;
     pcl::PointXYZRGB p;
+
+    for (auto item : segment_map) {
+
+      Color color;
+
+      auto it = color_map.find(item.first);
+      if (it != color_map.end()) {
+        color = it->second;
+      } else {
+        color.r = static_cast<uint8_t>(rand() % 256);
+        color.g = static_cast<uint8_t>(rand() % 256);
+        color.b = static_cast<uint8_t>(rand() % 256);
+      }
+
+      p.r = color.r;
+      p.g = color.g;
+      p.b = color.b;
+
+      for (auto index: item.second) {
+
+        const Point& point_C = points_C[index];
+        const Point point_G = T_G_C * point_C;
+
+        p.x = point_G(0);
+        p.y = point_G(1);
+        p.z = point_G(2);
+
+        rgbd_segmentation.points.push_back(p);
+      }
+    }
+
+    rgbd_segmentation.width = 1;
+    rgbd_segmentation.height = rgbd_segmentation.points.size();
+
+    if (!rgbd_segmentation.points.empty())
+      pcl::io::savePCDFile("/home/marius/pcds/rgbd_segmentation_" + std::to_string(num_frames_) + ".pcd", rgbd_segmentation);
 
     for (auto item : segment_map_) {
 
