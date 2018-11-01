@@ -9,6 +9,8 @@ add_definitions(-std=c++11 -Wall -Wextra)
 find_package(OpenCV REQUIRED)
 include_directories(${OpenCV_INCLUDE_DIRS})
 
+find_package(PCL 1.7 REQUIRED)
+
 #############
 # LIBRARIES #
 #############
@@ -23,7 +25,7 @@ cs_add_library(${PROJECT_NAME}
   src/segmenter.cc
 )
 
-target_link_libraries(${PROJECT_NAME} ${OpenCV_LIBRARIES})
+target_link_libraries(${PROJECT_NAME} ${OpenCV_LIBRARIES} ${PCL_LIBRARIES})
 
 ############
 # BINARIES #

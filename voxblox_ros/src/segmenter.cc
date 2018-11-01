@@ -15,7 +15,7 @@ Segmenter::Segmenter(const ros::NodeHandle& nh_private) :
 
   initColorMap(255);
 
-  nh_private_.param("seg_canny_sigma", canny_sigma_, 0.4f);
+  nh_private_.param("seg_canny_sigma", canny_sigma_, 0.5f);
   nh_private_.param("seg_canny_kernel_size", canny_kernel_size_, 3);
   nh_private_.param("seg_min_concavity", min_concavity_, 0.97f);
   nh_private_.param("seg_max_dist_step_", max_dist_step_, 0.005);
@@ -27,7 +27,7 @@ Segmenter::Segmenter(const ros::NodeHandle& nh_private) :
 
 }
 
-void Segmenter::segmentRgbdImage(const sensor_msgs::ImageConstPtr& color_img_msg, const sensor_msgs::CameraInfoConstPtr& color_cam_info_msg,
+void Segmenter::segmentRgbdImage(const sensor_msgs::ImageConstPtr& color_img_msg, const sensor_msgs::CameraInfoConstPtr& /*color_cam_info_msg*/,
                                  const sensor_msgs::ImageConstPtr& depth_img_msg, const sensor_msgs::CameraInfoConstPtr& depth_cam_info_msg,
                                  const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& cloud_msg, const pcl::PointCloud<int>& sub_cloud_indices, LabelIndexMap& segment_map)
  {
