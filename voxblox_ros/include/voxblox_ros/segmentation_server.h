@@ -56,6 +56,7 @@ class SegmentationServer : public TsdfServer {
   inline void fillPointcloudWithMesh(const MeshLayer::ConstPtr& mesh_layer, pcl::PointCloud<pcl::PointNormal>& pointcloud);
   void publishSegmentPointclouds();
 
+  template <typename T>
   void convertToCloud(const sensor_msgs::ImageConstPtr& depth_msg,
                       const sensor_msgs::ImageConstPtr& rgb_msg,
                       const sensor_msgs::CameraInfoConstPtr& depth_cam_info,

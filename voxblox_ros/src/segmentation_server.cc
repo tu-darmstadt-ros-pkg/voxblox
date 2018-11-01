@@ -181,26 +181,30 @@ void SegmentationServer::rgbdCallback(const sensor_msgs::ImageConstPtr& color_im
                                       const sensor_msgs::CameraInfoConstPtr& color_cam_info, const sensor_msgs::CameraInfoConstPtr& depth_cam_info) {
 
   sensor_msgs::PointCloud2::Ptr cloud = boost::make_shared<sensor_msgs::PointCloud2>();
-  cloud->header = depth_img->header; // Use depth image time stamp
+  cloud->header = depth_img->header;
   cloud->height = depth_img->height;
   cloud->width  = depth_img->width;
   cloud->is_dense = false;
   cloud->is_bigendian = false;
 
-
   sensor_msgs::PointCloud2Modifier pcd_modifier(*cloud);
   pcd_modifier.setPointCloud2FieldsByString(2, "xyz", "rgb");
 
-  convertToCloud(depth_img, color_img, depth_cam_info, cloud);
-
-  ROS_INFO_STREAM("cloud header: " << cloud->header);
-  ROS_INFO_STREAM("depth img header: " << depth_img->header);
-  ROS_INFO_STREAM("color img header: " << color_img->header);
+  if (depth_img->encoding == "32FC1") {
+    convertToCloud<float>(depth_img, color_img, depth_cam_info, cloud);
+  }
+  else if (depth_img->encoding == "16UC1") {
+    convertToCloud<uint16_t>(depth_img, color_img, depth_cam_info, cloud);
+  }
+  else {
+    ROS_ERROR("unsupported depth image encoding: %s", depth_img->encoding.c_str());
+  }
 
   insertPointcloud(cloud);
   integrateSegmentation(cloud, color_img, depth_img, color_cam_info, depth_cam_info);
 }
 
+template <typename T>
 void SegmentationServer::convertToCloud(const sensor_msgs::ImageConstPtr& depth_msg,
                                         const sensor_msgs::ImageConstPtr& rgb_msg,
                                         const sensor_msgs::CameraInfoConstPtr& depth_cam_info,
@@ -210,11 +214,15 @@ void SegmentationServer::convertToCloud(const sensor_msgs::ImageConstPtr& depth_
   float center_y = static_cast<float>(depth_cam_info->K[5]);
 
   float unit_scaling = 0.001f;
+
+  if (std::is_same<T, float>::value)
+    unit_scaling = 1.0f;
+
   float f_x = static_cast<float>(depth_cam_info->K[0]);
   float f_y = static_cast<float>(depth_cam_info->K[4]);
 
-  const uint16_t* depth_row = reinterpret_cast<const uint16_t*>(&depth_msg->data[0]);
-  int row_step = depth_msg->step / sizeof(uint16_t);
+  const T* depth_row = reinterpret_cast<const T*>(&depth_msg->data[0]);
+  int row_step = depth_msg->step / sizeof(T);
   const uint8_t* rgb = &rgb_msg->data[0];
   int rgb_skip = rgb_msg->step - rgb_msg->width * 3;
 
@@ -230,8 +238,8 @@ void SegmentationServer::convertToCloud(const sensor_msgs::ImageConstPtr& depth_
   {
     for (int u = 0; u < int(cloud->width); ++u, rgb += 3, ++iter_x, ++iter_y, ++iter_z, ++iter_a, ++iter_r, ++iter_g, ++iter_b)
     {
-      uint16_t depth = depth_row[u];
-      float scaled_depth = unit_scaling * depth;
+      T depth = depth_row[u];
+      float scaled_depth = unit_scaling * float(depth);
 
       // Check for invalid measurements
       if (depth == 0) {
