@@ -32,6 +32,7 @@
 #include <cv_bridge/cv_bridge.h>
 #include <image_geometry/pinhole_camera_model.h>
 #include <opencv2/rgbd.hpp>
+#include <opencv2/ximgproc.hpp>
 
 #include <voxblox/core/tsdf_map.h>
 #include <voxblox/integrator/tsdf_integrator.h>
@@ -75,9 +76,14 @@ class Segmenter {
 
   cv::Mat detectConcaveBoundaries(const cv::Mat& points, const cv::Mat& normals);
   cv::Mat detectGeometricalBoundaries(const cv::Mat& points, const cv::Mat& normals);
-  cv::Mat detectRgbBoundaries(const cv::Mat& color_img);
+  cv::Mat detectCannyEdgesMono(const cv::Mat& color_img);
+  cv::Mat detectCannyEdgesH1H2H3(const cv::Mat& color_img);
+  cv::Mat detectStructuredEdges(const cv::Mat& color_img);
+
   cv::Mat inpaintDepth(const cv::Mat& depth_img);
   cv::Mat filterImage(cv::Mat& depth_img);
+
+  cv::Mat applyCanny(const cv::Mat& gray_img);
 
   void getNeighbors(int row, int col, int height, int width, std::vector<cv::Point2i>& neighbors);
 
@@ -98,6 +104,8 @@ class Segmenter {
   int canny_kernel_size_;
   float min_concavity_;
   double max_dist_step_;
+
+  cv::Ptr<cv::ximgproc::StructuredEdgeDetection> structured_edges_;
 
   ros::Publisher edge_img_pub_;
   ros::Publisher segmentation_pub_;

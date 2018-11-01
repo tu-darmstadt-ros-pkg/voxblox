@@ -19,6 +19,12 @@ Segmenter::Segmenter(const ros::NodeHandle& nh_private) :
   nh_private_.param("seg_canny_kernel_size", canny_kernel_size_, 3);
   nh_private_.param("seg_min_concavity", min_concavity_, 0.97f);
   nh_private_.param("seg_max_dist_step_", max_dist_step_, 0.005);
+
+  std::string model_path = std::string(std::getenv("HOME")) + "/Downloads/model.yml.gz";
+  nh_private_.param("structured_edges_model_path", model_path, model_path);
+
+  structured_edges_ = cv::ximgproc::createStructuredEdgeDetection(model_path);
+
 }
 
 void Segmenter::segmentRgbdImage(const sensor_msgs::ImageConstPtr& color_img_msg, const sensor_msgs::CameraInfoConstPtr& color_cam_info_msg,
@@ -59,12 +65,12 @@ void Segmenter::segmentRgbdImage(const sensor_msgs::ImageConstPtr& color_img_msg
 
   cv::Mat edge_img_concave = detectConcaveBoundaries(points3d, normals);
   cv::Mat edge_img_depth_disc = detectGeometricalBoundaries(points3d, normals);
-  cv::Mat edge_img_canny = detectRgbBoundaries(color_img->image);
+  cv::Mat edge_img_color = detectStructuredEdges(color_img->image);
 
   timing::Timer seg_connected_components_timer("seg_connected_components");
 
   cv::Mat edge_img = cv::min(edge_img_concave, edge_img_depth_disc);
-  edge_img = cv::min(edge_img, edge_img_canny);
+  edge_img = cv::min(edge_img, edge_img_color);
 
   // increase the borders a little bit before the segmentation
   cv::Mat kernel = cv::Mat::ones(2, 2, CV_8U);
@@ -114,7 +120,7 @@ void Segmenter::segmentRgbdImage(const sensor_msgs::ImageConstPtr& color_img_msg
   publishImg(edge_img, pcl_conversions::fromPCL(cloud_msg->header), edge_img_pub_);
   publishImg(edge_img_concave, pcl_conversions::fromPCL(cloud_msg->header), concave_edges_pub_);
   publishImg(edge_img_depth_disc, pcl_conversions::fromPCL(cloud_msg->header), depth_disc_edges_pub_);
-  publishImg(edge_img_canny, pcl_conversions::fromPCL(cloud_msg->header), rgb_edges_pub_);
+  publishImg(edge_img_color, pcl_conversions::fromPCL(cloud_msg->header), rgb_edges_pub_);
   publishNormalsImg(normals, pcl_conversions::fromPCL(cloud_msg->header), normals_pub_);
   publishImg(depth_img_inpainted, pcl_conversions::fromPCL(cloud_msg->header), depth_inpainted_pub_);
 }
@@ -290,29 +296,87 @@ uchar imageMedian(const cv::Mat& img) {
   return vec_from_mat[vec_from_mat.size() / 2];
 }
 
-cv::Mat Segmenter::detectRgbBoundaries(const cv::Mat& color_img) {
-  timing::Timer seg_canny_boundaries_timer("seg_canny_boundaries");
+cv::Mat Segmenter::detectCannyEdgesMono(const cv::Mat& color_img) {
+  timing::Timer seg_canny_boundaries_timer("seg_canny_mono_edges");
   int width = color_img.cols;
   int height = color_img.rows;
 
-  cv::Mat edge_img(height, width, CV_8UC1, cv::Scalar(0));
-
   // Create cv::Mat
   cv::Mat gray_img = cv::Mat(height, width, CV_8UC1);
+  return applyCanny(gray_img);
+}
 
-  cv::cvtColor(color_img, gray_img, CV_BGR2GRAY);
+cv::Mat Segmenter::detectCannyEdgesH1H2H3(const cv::Mat& color_img) {
+  timing::Timer seg_canny_boundaries_timer("seg_canny_edges_h1h2h3");
+
+  cv::Mat color_img_float;
+  color_img.convertTo(color_img_float, CV_32FC3);
+
+  cv::Mat bgr[3];   //destination array
+  cv::split(color_img_float, bgr); //split source
+
+  cv::Mat h1 = bgr[2] - bgr[1];
+  cv::Mat h2 = bgr[1] - bgr[0];
+  cv::Mat h3 = bgr[0] - bgr[2];
+
+  cv::normalize(h1, h1, 0, 255, cv::NORM_MINMAX, CV_8UC1);
+  cv::normalize(h2, h2, 0, 255, cv::NORM_MINMAX, CV_8UC1);
+  cv::normalize(h3, h3, 0, 255, cv::NORM_MINMAX, CV_8UC1);
+
+  cv::Mat h1_edges = applyCanny(h1);
+  cv::Mat h2_edges = applyCanny(h2);
+  cv::Mat h3_edges = applyCanny(h3);
+
+  cv::Mat rgb_edges = cv::min(h1_edges, h2_edges);
+  rgb_edges = cv::min(rgb_edges, h3_edges);
+
+  seg_canny_boundaries_timer.Stop();
+
+  return rgb_edges;
+}
+
+cv::Mat Segmenter::detectStructuredEdges(const cv::Mat& color_img) {
+  timing::Timer seg_canny_boundaries_timer("seg_structured_edges");
+
+  cv::Mat3f fsrc;
+  color_img.convertTo(fsrc, CV_32F, 1.0 / 255.0);
+
+  cv::Mat edges;
+  structured_edges_->detectEdges(fsrc, edges);
+  // computes orientation from edge map
+  //cv::Mat orientation_map;
+  //structured_edges_->computeOrientation(edges, orientation_map);
+
+  // suppress edges
+  //structured_edges_->edgesNms(edges, orientation_map, edge_nms, 2, 0, 1, true);
+  edges.convertTo(edges, CV_8UC1, 255.0);
+  cv::threshold(edges, edges, 50, 255, cv::THRESH_BINARY);
+  cv::bitwise_not(edges, edges);
+
+  seg_canny_boundaries_timer.Stop();
+
+  return edges;
+}
+
+cv::Mat Segmenter::applyCanny(const cv::Mat& gray_img) {
+  timing::Timer seg_canny_boundaries_timer("seg_canny_boundaries");
+  int width = gray_img.cols;
+  int height = gray_img.rows;
+
+  cv::Mat edge_img(height, width, CV_8UC1, cv::Scalar(0));
+  cv::Mat blur_img(gray_img);
 
   // Reduce noise with blurring
-  cv::blur(gray_img, gray_img, cv::Size(7,7));
+  cv::blur(gray_img, blur_img, cv::Size(7, 7));
 
-  float median = static_cast<float>(imageMedian(gray_img));
+  float median = static_cast<float>(imageMedian(blur_img));
 
   // apply automatic canny edge detection using the image median
   int lower_tresh = static_cast<int>(std::max(0, static_cast<int>((1.0f - canny_sigma_) * median)));
   int upper_tresh = static_cast<int>(std::min(255, static_cast<int>((1.0f + canny_sigma_) * median)));
 
   // Canny detector
-  cv::Canny(gray_img, edge_img, lower_tresh, upper_tresh, canny_kernel_size_);
+  cv::Canny(blur_img, edge_img, lower_tresh, upper_tresh, canny_kernel_size_);
   cv::bitwise_not(edge_img, edge_img);
 
   seg_canny_boundaries_timer.Stop();
@@ -466,7 +530,7 @@ void Segmenter::enumerateSegments(const LabelIndexMap& segment_map, const ImageI
 
     int num_pixel = static_cast<int>(segment.second.size());
 
-    if (num_pixel < 20)
+    if (num_pixel < 100)
       continue;
 
     const std::string text = std::to_string(segment_id);
