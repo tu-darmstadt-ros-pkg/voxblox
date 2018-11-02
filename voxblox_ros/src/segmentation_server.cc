@@ -91,8 +91,10 @@ void SegmentationServer::integrateSegmentation(const sensor_msgs::PointCloud2Con
   seg_tsdf_integrator_->integrateSegmentedPointCloud(T_G_C_current_, points_C, segment_map, segmenter_.getColorMap());
   seg_integrate_timer.Stop();
 
+  timing::Timer seg_remove_distant_blocks_timer("seg_remove_distant_blocks");
   seg_tsdf_map_->getTsdfLayerPtr()->removeDistantBlocks(
       T_G_C_current_.getPosition(), max_block_distance_from_body_);
+  seg_remove_distant_blocks_timer.Stop();
 }
 
 void SegmentationServer::recolorVoxbloxMeshMsgBySegmentation(voxblox_msgs::Mesh* mesh_msg) {
@@ -101,26 +103,34 @@ void SegmentationServer::recolorVoxbloxMeshMsgBySegmentation(voxblox_msgs::Mesh*
 
   // Go over all the blocks in the mesh.
   for (voxblox_msgs::MeshBlock& mesh_block : mesh_msg->mesh_blocks) {
-    // Go over all the triangles in the mesh.
 
-    for (voxblox_msgs::Triangle& triangle : mesh_block.triangles) {
-      // Look up triangles in the thermal layer.
-      for (size_t local_vert_idx = 0u; local_vert_idx < 3; ++local_vert_idx) {
-        const SegmentedVoxel* voxel = segment_layer.getVoxelPtrByCoordinates(
-            Point(triangle.x[local_vert_idx], triangle.y[local_vert_idx],
-                  triangle.z[local_vert_idx]));
-        if (voxel != nullptr) {
-          Color segment_color = segmenter_.getSegmentColor(voxel->segment_id);
-          triangle.r[local_vert_idx] = segment_color.r;
-          triangle.g[local_vert_idx] = segment_color.g;
-          triangle.b[local_vert_idx] = segment_color.b;
-          triangle.a[local_vert_idx] = 255;
-        } else {
-          triangle.r[local_vert_idx] = 0;
-          triangle.g[local_vert_idx] = 0;
-          triangle.b[local_vert_idx] = 0;
-          triangle.a[local_vert_idx] = 0;
-        }
+    const voxblox::BlockIndex index(mesh_block.index[0], mesh_block.index[1], mesh_block.index[2]);
+
+    for (size_t vert_idx = 0u; vert_idx < mesh_block.x.size(); ++vert_idx) {
+
+      constexpr float point_conv_factor = 2.0f / std::numeric_limits<uint16_t>::max();
+      const float mesh_x =
+          (static_cast<float>(mesh_block.x[vert_idx]) * point_conv_factor +
+           static_cast<float>(index[0])) * mesh_msg->block_edge_length;
+      const float mesh_y =
+          (static_cast<float>(mesh_block.y[vert_idx]) * point_conv_factor +
+           static_cast<float>(index[1])) * mesh_msg->block_edge_length;
+      const float mesh_z =
+          (static_cast<float>(mesh_block.z[vert_idx]) * point_conv_factor +
+           static_cast<float>(index[2])) * mesh_msg->block_edge_length;
+
+      const SegmentedVoxel* voxel = segment_layer.getVoxelPtrByCoordinates(
+          Point(mesh_x, mesh_y, mesh_z));
+
+      if (voxel != nullptr) {
+        Color segment_color = segmenter_.getSegmentColor(voxel->segment_id);
+        mesh_block.r[vert_idx] = segment_color.r;
+        mesh_block.g[vert_idx] = segment_color.g;
+        mesh_block.b[vert_idx] = segment_color.b;
+      } else {
+        mesh_block.r[vert_idx] = 0;
+        mesh_block.g[vert_idx] = 0;
+        mesh_block.b[vert_idx] = 0;
       }
     }
   }
