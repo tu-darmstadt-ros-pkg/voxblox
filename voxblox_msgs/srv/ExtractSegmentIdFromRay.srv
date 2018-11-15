@@ -1,0 +1,4 @@
+geometry_msgs/Vector3 ray_origin
+geometry_msgs/Vector3 ray_direction
+---
+uint32 segment_id

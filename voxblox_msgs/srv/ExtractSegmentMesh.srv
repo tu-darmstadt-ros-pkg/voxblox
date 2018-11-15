@@ -1,0 +1,5 @@
+uint32 segment_id
+---
+shape_msgs/Mesh segment_mesh
+sensor_msgs/PointCloud2 segment_cloud
+
