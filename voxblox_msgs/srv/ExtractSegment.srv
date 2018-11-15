@@ -1,3 +1,0 @@
-uint16 segment_id
----
-sensor_msgs/PointCloud2 segment_cloud

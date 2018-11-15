@@ -24,6 +24,7 @@
   <depend>sensor_msgs</depend>
   <depend>tf</depend>
   <depend>image_geometry</depend>
+  <depend>shape_msgs</depend>
 
   <depend>voxblox</depend>
   <depend>voxblox_msgs</depend>

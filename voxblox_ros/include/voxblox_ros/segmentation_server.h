@@ -9,6 +9,7 @@
 #include <message_filters/sync_policies/approximate_time.h>
 #include <message_filters/synchronizer.h>
 #include <sensor_msgs/point_cloud2_iterator.h>
+#include <shape_msgs/Mesh.h>
 
 #include <voxblox/core/voxel.h>
 #include <voxblox/integrator/intensity_integrator.h>
@@ -20,8 +21,8 @@
 #include "voxblox_ros/segmenter.h"
 
 #include <voxblox_msgs/PointCloudList.h>
-#include <voxblox_msgs/ExtractSegment.h>
-#include <voxblox_msgs/ExtractSegmentFromRay.h>
+#include <voxblox_msgs/ExtractSegmentMesh.h>
+#include <voxblox_msgs/ExtractSegmentIdFromRay.h>
 
 #include <pcl/keypoints/uniform_sampling.h>
 #include <pcl/common/common.h>
@@ -45,8 +46,8 @@ class SegmentationServer : public TsdfServer {
   void rgbdCallback(const sensor_msgs::ImageConstPtr& color_img, const sensor_msgs::ImageConstPtr& depth_img,
                     const sensor_msgs::CameraInfoConstPtr& color_cam_info, const sensor_msgs::CameraInfoConstPtr& depth_cam_info);
 
-  bool extractSegmentCloud(voxblox_msgs::ExtractSegmentRequest& req, voxblox_msgs::ExtractSegmentResponse& res);
-  bool extractSegmentCloudFromRay(voxblox_msgs::ExtractSegmentFromRayRequest& req, voxblox_msgs::ExtractSegmentFromRayResponse& res);
+  bool extractSegmentMesh(voxblox_msgs::ExtractSegmentMeshRequest& req, voxblox_msgs::ExtractSegmentMeshResponse& res);
+  bool extractSegmentIDFromRay(voxblox_msgs::ExtractSegmentIdFromRayRequest& req, voxblox_msgs::ExtractSegmentIdFromRayResponse& res);
 
  protected:
 
@@ -55,6 +56,7 @@ class SegmentationServer : public TsdfServer {
                              const sensor_msgs::CameraInfoConstPtr& color_cam_info, const sensor_msgs::CameraInfoConstPtr& depth_cam_info);
   inline void fillPointcloudWithMesh(const MeshLayer::ConstPtr& mesh_layer, pcl::PointCloud<pcl::PointNormal>& pointcloud);
   void publishSegmentPointclouds();
+  inline void fillMeshMsgWithMesh(const MeshLayer::ConstPtr& mesh_layer, shape_msgs::Mesh& mesh_msg);
 
   template <typename T>
   void convertToCloud(const sensor_msgs::ImageConstPtr& depth_msg,
@@ -62,12 +64,13 @@ class SegmentationServer : public TsdfServer {
                       const sensor_msgs::CameraInfoConstPtr& depth_cam_info,
                       const sensor_msgs::PointCloud2::Ptr& cloud);
 
-  bool extractSegmentCloud(Label segment_id, sensor_msgs::PointCloud2& cloud);
+  bool extractSegmentMesh(Label segment_id, sensor_msgs::PointCloud2& cloud_msg, shape_msgs::Mesh& mesh_msg);
 
   // Publish markers for visualization.
   ros::Publisher segment_pointclouds_pub_;
   ros::Publisher segmentation_mesh_pub_;
-  ros::Publisher extracted_seg_pub_;
+  ros::Publisher extracted_seg_cloud_pub_;
+  ros::Publisher extracted_seg_mesh_pub_;
 
   std::shared_ptr<SegmentedTsdfMap> seg_tsdf_map_;
   std::unique_ptr<SegmentedTsdfIntegrator> seg_tsdf_integrator_;
@@ -82,8 +85,8 @@ class SegmentationServer : public TsdfServer {
 
   Transformation T_G_C_current_;
 
-  ros::ServiceServer segment_cloud_service_;
-  ros::ServiceServer segment_cloud_from_ray_service_;
+  ros::ServiceServer segment_mesh_service_;
+  ros::ServiceServer segment_id_from_ray_service_;
 };
 
 }  // namespace voxblox

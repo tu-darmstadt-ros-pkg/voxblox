@@ -79,7 +79,7 @@ MeshLayer::ConstPtr SegmentTools::meshSegment(const LabelBlockIndexesMap& segmen
 Label SegmentTools::getSegmentIdFromRay(const Point& origin, const Point& direction) {
 
   Point surface_intersection;
-  float max_distance = 2.0;
+  float max_distance = 20.0;
   bool success = getSurfaceDistanceAlongRay<TsdfVoxel>(*tsdf_layer_, origin, direction,
                                                        max_distance, &surface_intersection);
   if (success) {

@@ -22,10 +22,11 @@ SegmentationServer::SegmentationServer(const ros::NodeHandle& nh,
     msg_sync_.setInterMessageLowerBound(i, ros::Duration(1.0));
 
   // Publishers for output.
-  segment_pointclouds_pub_ = nh_private_.advertise<voxblox_msgs::PointCloudList>("segment_pointclouds", 1, true);
+  segment_pointclouds_pub_ = nh_private_.advertise<voxblox_msgs::PointCloudList>("segment_pointclouds", 1, false);
   segmentation_mesh_pub_ =
       nh_private_.advertise<voxblox_msgs::Mesh>("segmentation_mesh", 1, true);
-  extracted_seg_pub_ = nh_private_.advertise<sensor_msgs::PointCloud2>("extracted_segment", 1, true);
+  extracted_seg_cloud_pub_ = nh_private_.advertise<sensor_msgs::PointCloud2>("extracted_segment_cloud", 1, false);
+  extracted_seg_mesh_pub_ = nh_private_.advertise<shape_msgs::Mesh>("extracted_segment_mesh", 1, false);
 
   seg_tsdf_map_.reset(new SegmentedTsdfMap(tsdf_map_->voxel_size(), tsdf_map_->getTsdfLayer().voxels_per_side()));
 
@@ -35,12 +36,12 @@ SegmentationServer::SegmentationServer(const ros::NodeHandle& nh,
 
   segment_tool_.reset(new SegmentTools(tsdf_map_->getTsdfLayerPtr(), seg_tsdf_map_->getTsdfLayerPtr()));
 
-  segment_cloud_service_ = nh_private_.advertiseService("extract_segment_cloud",
-                                                        &SegmentationServer::extractSegmentCloud,
+  segment_mesh_service_ = nh_private_.advertiseService("extract_segment_mesh",
+                                                        &SegmentationServer::extractSegmentMesh,
                                                         this);
-  segment_cloud_from_ray_service_ = nh_private_.advertiseService("extract_segment_cloud_from_ray",
-                                                                 &SegmentationServer::extractSegmentCloudFromRay,
-                                                                 this);
+  segment_id_from_ray_service_ = nh_private_.advertiseService("extract_segment_id_from_ray",
+                                                              &SegmentationServer::extractSegmentIDFromRay,
+                                                              this);
   // we don't need this subscriber anymore
   pointcloud_sub_.shutdown();
 }
@@ -172,6 +173,33 @@ inline void SegmentationServer::fillPointcloudWithMesh(const MeshLayer::ConstPtr
   }
 }
 
+inline void SegmentationServer::fillMeshMsgWithMesh(const MeshLayer::ConstPtr& mesh_layer, shape_msgs::Mesh& mesh_msg) {
+  mesh_msg.triangles.clear();
+  mesh_msg.vertices.clear();
+  shape_msgs::MeshTriangle triangle;
+  geometry_msgs::Point vertex;
+
+  Mesh connected_mesh;
+  mesh_layer->getConnectedMesh(&connected_mesh);
+
+  if (!connected_mesh.hasVertices() || !connected_mesh.hasTriangles()) {
+    return;
+  }
+
+  for (size_t i = 0u; i < connected_mesh.vertices.size(); i+=3) {
+    for (size_t j = 0u; j < 3; j++) {
+      vertex.x = static_cast<double>(connected_mesh.vertices[i+j].x());
+      vertex.y = static_cast<double>(connected_mesh.vertices[i+j].y());
+      vertex.z = static_cast<double>(connected_mesh.vertices[i+j].z());
+
+      mesh_msg.vertices.push_back(vertex);
+
+      triangle.vertex_indices[j] = static_cast<uint>(connected_mesh.indices[i+j]);
+    }
+    mesh_msg.triangles.push_back(triangle);
+  }
+}
+
 void SegmentationServer::publishPointclouds() {
   voxblox_msgs::PointCloudList pointcloud_list;
 
@@ -180,7 +208,8 @@ void SegmentationServer::publishPointclouds() {
       continue;
 
     sensor_msgs::PointCloud2 cloud;
-    extractSegmentCloud(segment_id, cloud);
+    shape_msgs::Mesh mesh;
+    extractSegmentMesh(segment_id, cloud, mesh);
     pointcloud_list.clouds.push_back(cloud);
   }
 
@@ -270,40 +299,44 @@ void SegmentationServer::convertToCloud(const sensor_msgs::ImageConstPtr& depth_
   }
 }
 
-bool SegmentationServer::extractSegmentCloud(voxblox_msgs::ExtractSegmentRequest& req, voxblox_msgs::ExtractSegmentResponse& res) {
-  extractSegmentCloud(req.segment_id, res.segment_cloud);
-  extracted_seg_pub_.publish(res.segment_cloud);
+bool SegmentationServer::extractSegmentMesh(voxblox_msgs::ExtractSegmentMeshRequest& req, voxblox_msgs::ExtractSegmentMeshResponse& res) {
+  extractSegmentMesh(req.segment_id, res.segment_cloud, res.segment_mesh);
+  extracted_seg_cloud_pub_.publish(res.segment_cloud);
+  extracted_seg_mesh_pub_.publish(res.segment_mesh);
+
+  ROS_INFO_STREAM("cloud size: " << res.segment_cloud.height * res.segment_cloud.width);
+  ROS_INFO_STREAM("Created a mesh consisting of " << res.segment_mesh.triangles.size() << " triangles and " << res.segment_mesh.vertices.size() << " vertices");
 
   return true;
 }
 
-bool SegmentationServer::extractSegmentCloudFromRay(voxblox_msgs::ExtractSegmentFromRayRequest& req, voxblox_msgs::ExtractSegmentFromRayResponse& res) {
+bool SegmentationServer::extractSegmentIDFromRay(voxblox_msgs::ExtractSegmentIdFromRayRequest& req, voxblox_msgs::ExtractSegmentIdFromRayResponse& res) {
   Point origin(req.ray_origin.x, req.ray_origin.y, req.ray_origin.z);
   Point direction(req.ray_direction.x, req.ray_direction.y, req.ray_direction.z);
   Label segment_id = segment_tool_->getSegmentIdFromRay(origin, direction);
 
+  ROS_INFO_STREAM("ray hit segment " << segment_id);
+
+  res.segment_id = segment_id;
+
   if (segment_id == 0)
     return false;
-
-  extractSegmentCloud(segment_id, res.segment_cloud);
-  extracted_seg_pub_.publish(res.segment_cloud);
-
-  ROS_INFO_STREAM("cloud size: " << res.segment_cloud.height * res.segment_cloud.width);
 
   return true;
 }
 
-bool SegmentationServer::extractSegmentCloud(Label segment_id, sensor_msgs::PointCloud2& cloud) {
+bool SegmentationServer::extractSegmentMesh(Label segment_id, sensor_msgs::PointCloud2& cloud_msg, shape_msgs::Mesh& mesh_msg) {
   pcl::PointCloud<pcl::PointNormal> pointcloud_pcl;
 
   MeshLayer::ConstPtr mesh = segment_tool_->meshSegment(seg_tsdf_integrator_->getSegmentBlocksMap(), segment_id);
   fillPointcloudWithMesh(mesh, pointcloud_pcl);
+  fillMeshMsgWithMesh(mesh, mesh_msg);
 
-  pcl::toROSMsg(pointcloud_pcl, cloud);
-  cloud.header.frame_id = world_frame_;
+  pcl::toROSMsg(pointcloud_pcl, cloud_msg);
+  cloud_msg.header.frame_id = world_frame_;
 
   // TODO: time stamp of the pointcloud input msg
-  cloud.header.stamp = ros::Time::now();
+  cloud_msg.header.stamp = ros::Time::now();
 
   return true;
 }
