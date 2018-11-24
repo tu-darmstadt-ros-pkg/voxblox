@@ -12,13 +12,15 @@ Segmenter::Segmenter(const ros::NodeHandle& nh_private) :
   rgb_edges_pub_ = nh_private_.advertise<sensor_msgs::Image>("rgb_edges", 1, true);
   normals_pub_ = nh_private_.advertise<sensor_msgs::Image>("normals", 1, true);
   depth_inpainted_pub_ = nh_private_.advertise<sensor_msgs::Image>("depth_inpainted", 1, true);
+  depth_filtered_pub_ = nh_private_.advertise<sensor_msgs::Image>("depth_filtered", 1, true);
+  depth_input_pub_ = nh_private_.advertise<sensor_msgs::Image>("depth_input", 1, true);
 
   initColorMap(255);
 
   nh_private_.param("seg_canny_sigma", canny_sigma_, 0.5f);
   nh_private_.param("seg_canny_kernel_size", canny_kernel_size_, 3);
   nh_private_.param("seg_min_concavity", min_concavity_, 0.97f);
-  nh_private_.param("seg_max_dist_step_", max_dist_step_, 0.005);
+  nh_private_.param("seg_max_dist_step", max_dist_step_, 0.005f);
 
   std::string model_path = std::string(std::getenv("HOME")) + "/Downloads/model.yml.gz";
   nh_private_.param("structured_edges_model_path", model_path, model_path);
@@ -48,23 +50,26 @@ void Segmenter::segmentRgbdImage(const sensor_msgs::ImageConstPtr& color_img_msg
 
   // convert the unit to mm if needed
   if (depth_img_msg->encoding == "32FC1") {
-    CvImagePtr depth_img_m = cv_bridge::toCvCopy(depth_img_msg, sensor_msgs::image_encodings::TYPE_32FC1);
-    depth_img_m->image *= 1000.0f;
-    depth_img_m->image.convertTo(depth_img_m->image, CV_16U);
-    depth_img = depth_img_m;
+    CvImagePtr depth_img_mm = cv_bridge::toCvCopy(depth_img_msg, sensor_msgs::image_encodings::TYPE_32FC1);
+    depth_img_mm->image.convertTo(depth_img_mm->image, CV_16U, 1000.0);
+    depth_img = depth_img_mm;
   } else {
     depth_img = cv_bridge::toCvShare(depth_img_msg, sensor_msgs::image_encodings::TYPE_16UC1);
   }
+
+  publishImg(depth_img->image, pcl_conversions::fromPCL(cloud_msg->header), depth_input_pub_);
 
   cv::Mat depth_img_inpainted = inpaintDepth(depth_img->image);
   cv::Mat depth_img_smoothed = filterImage(depth_img_inpainted);
 
   cv::Mat points3d;
-  cv::rgbd::depthTo3d(depth_img_smoothed, depth_camera_model_.fullIntrinsicMatrix(), points3d);
-  cv::Mat normals = estimateNormals(points3d, depth_camera_model_.fullIntrinsicMatrix());
+  cv::Matx33f intrinsic_matrix_f(depth_camera_model_.fullIntrinsicMatrix());
+  cv::rgbd::depthTo3d(depth_img_smoothed, intrinsic_matrix_f, points3d);
+  //cv::Mat normals = estimateNormals(points3d, depth_camera_model_.fullIntrinsicMatrix());
+  cv::Mat normals = estimateNormalsCrossProduct(depth_img->image);
 
   cv::Mat edge_img_concave = detectConcaveBoundaries(points3d, normals);
-  cv::Mat edge_img_depth_disc = detectGeometricalBoundaries(points3d, normals);
+  cv::Mat edge_img_depth_disc = detectDepthDiscBoundaries(points3d, normals);
   cv::Mat edge_img_color = detectStructuredEdges(color_img->image);
 
   timing::Timer seg_connected_components_timer("seg_connected_components");
@@ -121,8 +126,9 @@ void Segmenter::segmentRgbdImage(const sensor_msgs::ImageConstPtr& color_img_msg
   publishImg(edge_img_concave, pcl_conversions::fromPCL(cloud_msg->header), concave_edges_pub_);
   publishImg(edge_img_depth_disc, pcl_conversions::fromPCL(cloud_msg->header), depth_disc_edges_pub_);
   publishImg(edge_img_color, pcl_conversions::fromPCL(cloud_msg->header), rgb_edges_pub_);
-  publishNormalsImg(normals, pcl_conversions::fromPCL(cloud_msg->header), normals_pub_);
   publishImg(depth_img_inpainted, pcl_conversions::fromPCL(cloud_msg->header), depth_inpainted_pub_);
+  publishImg(depth_img_smoothed, pcl_conversions::fromPCL(cloud_msg->header), depth_filtered_pub_);
+  publishNormalsImg(normals, pcl_conversions::fromPCL(cloud_msg->header), normals_pub_);
 }
 
 cv::Mat Segmenter::estimateNormals(const cv::Mat& points_3d, const cv::Matx33d& intrinsic_matrix) {
@@ -142,18 +148,46 @@ cv::Mat Segmenter::estimateNormals(const cv::Mat& points_3d, const cv::Matx33d& 
   return normals;
 }
 
+cv::Mat Segmenter::estimateNormalsCrossProduct(const cv::Mat& depth_img) {
+
+  timing::Timer seg_normal_estimation_timer("seg_normal_estimation");
+
+  cv::medianBlur(depth_img, depth_img, 5);
+  cv::Mat normals(depth_img.rows, depth_img.cols, CV_32FC3);
+
+  int neighborhood_radius = 3;
+
+  for (int row = neighborhood_radius; row < depth_img.rows - neighborhood_radius; row++) {
+    for (int col = neighborhood_radius; col < depth_img.cols - neighborhood_radius; col++) {
+
+      int row_a = row-neighborhood_radius;
+      int col_a = col-neighborhood_radius;
+      cv::Vec3d a(row_a, col_a, static_cast<double>(depth_img.at<uint16_t>(row_a, col_a)));
+
+      int row_b = row-neighborhood_radius;
+      int col_b = col+neighborhood_radius;
+      cv::Vec3d b(row_b, col_b, static_cast<double>(depth_img.at<uint16_t>(row_b, col_b)));
+
+      int row_c = row+neighborhood_radius;
+      int col_c = col;
+      cv::Vec3d c(row_c, col_c, static_cast<double>(depth_img.at<uint16_t>(row_c, col_c)));
+
+      cv::Vec3d n = (b-a).cross(c-a);
+      normals.at<cv::Vec3f>(row, col) = cv::normalize(n);
+    }
+  }
+
+  seg_normal_estimation_timer.Stop();
+
+  return normals;
+}
+
 cv::Mat Segmenter::inpaintDepth(const cv::Mat& depth_img) {
 
   timing::Timer seg_inpaint_depth_timer("seg_inpaint_image");
 
-  cv::Mat depth_img_inpainted(depth_img);
-
-  //use a smaller version of the image
-  cv::Mat small_depthf, small_depth_inpaint;
-  cv::resize(depth_img, small_depthf, cv::Size(), 0.25, 0.25);
-  cv::inpaint(small_depthf, (small_depthf == 0), small_depth_inpaint, 5.0, cv::INPAINT_TELEA);
-  cv::resize(small_depth_inpaint, small_depth_inpaint, depth_img.size());
-  small_depth_inpaint.copyTo(depth_img_inpainted, (depth_img == 0));
+  cv::Mat depth_img_inpainted;
+  cv::inpaint(depth_img, (depth_img == 0), depth_img_inpainted, 5.0, cv::INPAINT_NS);
 
   seg_inpaint_depth_timer.Stop();
 
@@ -163,15 +197,17 @@ cv::Mat Segmenter::inpaintDepth(const cv::Mat& depth_img) {
 cv::Mat Segmenter::filterImage(cv::Mat& depth_img) {
 
   timing::Timer seg_filter_image_timer("seg_filter_image");
-  depth_img.convertTo(depth_img, CV_32F);
   cv::Mat depth_img_smoothed;
 
+  depth_img.convertTo(depth_img, CV_32F);
+
   int d = 5;
-  double 	sigma_color = 50.0;
-  double 	sigma_space = 50.0;
+  double 	sigma_color = 250.0;
+  double 	sigma_space = 250.0;
   cv::bilateralFilter(depth_img, depth_img_smoothed, d, sigma_color, sigma_space);
-  depth_img_smoothed.convertTo(depth_img_smoothed, CV_16U);
+
   depth_img.convertTo(depth_img, CV_16U);
+  depth_img_smoothed.convertTo(depth_img_smoothed, CV_16U);
 
   seg_filter_image_timer.Stop();
 
@@ -180,7 +216,7 @@ cv::Mat Segmenter::filterImage(cv::Mat& depth_img) {
 
 cv::Mat Segmenter::colorizeSegmentationImg(const cv::Mat& seg_img, const LabelIndexMap& segment_map) {
 
-  cv::Mat seg_img_color(seg_img);
+  cv::Mat seg_img_color = seg_img.clone();
   seg_img_color.convertTo(seg_img_color, CV_8U);
   cv::cvtColor(seg_img_color, seg_img_color, CV_GRAY2BGR);
 
@@ -205,7 +241,7 @@ cv::Mat Segmenter::colorizeSegmentationImg(const cv::Mat& seg_img, const LabelIn
   return seg_img_color;
 }
 
-cv::Mat Segmenter::detectGeometricalBoundaries(const cv::Mat& points, const cv::Mat& normals) {
+cv::Mat Segmenter::detectDepthDiscBoundaries(const cv::Mat& points, const cv::Mat& normals) {
   timing::Timer seg_depth_disc_boundaries_timer("seg_depth_disc_boundaries");
 
   std::vector<cv::Point2i> neighbors;
@@ -215,13 +251,12 @@ cv::Mat Segmenter::detectGeometricalBoundaries(const cv::Mat& points, const cv::
   const int height = points.rows;
 
   cv::Mat edge_img(height, width, CV_8UC1, cv::Scalar(0));
-
   for (int row = 0; row < height; row++) {
     for (int col = 0; col < width; col++) {
 
       getNeighbors(row, col, height, width, neighbors);
 
-      double max_dist = -std::numeric_limits<double>::max();
+      float max_dist = -std::numeric_limits<float>::max();
 
       const cv::Point3f& p = points.at<cv::Point3f>(row, col);
       const cv::Point3f& n = normals.at<cv::Point3f>(row, col);
@@ -229,7 +264,7 @@ cv::Mat Segmenter::detectGeometricalBoundaries(const cv::Mat& points, const cv::
       for (const cv::Point2i& i: neighbors) {
         const cv::Point3f& p_i = points.at<cv::Point3f>(i);
 
-        cv::Point3d diff = p_i - p;
+        cv::Point3f diff = p_i - p;
         max_dist = std::max(std::abs(diff.dot(n)), max_dist);
       }
 
@@ -262,18 +297,18 @@ cv::Mat Segmenter::detectConcaveBoundaries(const cv::Mat& points, const cv::Mat&
 
       float min_concavity = std::numeric_limits<float>::max();
 
-      const cv::Point3f& p = points.at<cv::Point3f>(row, col);
-      const cv::Point3f& n = normals.at<cv::Point3f>(row, col);
+      const cv::Vec3f& p = points.at<cv::Vec3f>(row, col);
+      const cv::Vec3f& n = normals.at<cv::Vec3f>(row, col);
 
       for (const cv::Point2i& i: neighbors) {
-        const cv::Point3f& p_i = points.at<cv::Point3f>(i);
-        cv::Point3d diff = p_i - p;
+        const cv::Vec3f& p_i = points.at<cv::Vec3f>(i);
+        cv::Vec3f diff = p_i - p;
 
-        if (diff.dot(n) > 0) {
+        if (diff.ddot(n) > 0) {
           min_concavity = std::min(1.0f, min_concavity);
         }
         else {
-          const cv::Point3f& n_i = normals.at<cv::Point3f>(i);
+          const cv::Vec3f& n_i = normals.at<cv::Vec3f>(i);
 
           min_concavity = std::min(n.dot(n_i), min_concavity);
         }
@@ -364,7 +399,7 @@ cv::Mat Segmenter::applyCanny(const cv::Mat& gray_img) {
   int height = gray_img.rows;
 
   cv::Mat edge_img(height, width, CV_8UC1, cv::Scalar(0));
-  cv::Mat blur_img(gray_img);
+  cv::Mat blur_img(height, width, CV_8UC1);
 
   // Reduce noise with blurring
   cv::blur(gray_img, blur_img, cv::Size(7, 7));
@@ -428,6 +463,12 @@ void Segmenter::publishImg(const cv::Mat& img, const std_msgs::Header& header, r
     msg = cv_bridge::CvImage(header, "mono8", img).toImageMsg();
   else if (img.type() == CV_16U)
     msg = cv_bridge::CvImage(header, "mono16", img).toImageMsg();
+  else if (img.type() == CV_32F)
+  {
+    cv::Mat img_mm;
+    img.convertTo(img_mm, CV_16U, 1000);
+    msg = cv_bridge::CvImage(header, "mono16", img_mm).toImageMsg();
+  }
   else
     ROS_ERROR_STREAM("unknown img type to publish: " << img.type());
 
@@ -542,8 +583,8 @@ void Segmenter::enumerateSegments(const LabelIndexMap& segment_map, const ImageI
     int avg_col = segment_centroids[segment.first](1)/num_pixel;
 
     Color c = getSegmentColor(segment_id);
-    cv::Point p1(avg_col - 0.5f * text_size.width, avg_row + 0.75f * text_size.height);
-    cv::Point p2(avg_col + 0.5f * text_size.width, avg_row - 0.75f * text_size.height);
+    cv::Point p1(avg_col - text_size.width/2, avg_row + (3*text_size.height)/4);
+    cv::Point p2(avg_col + text_size.width/2, avg_row - (3*text_size.height)/4);
     cv::rectangle(img, p1, p2, cv::Scalar(255, 255, 255), CV_FILLED, 0);
 
     // offset the coordinates so that the text is inside the rectangle
@@ -556,14 +597,6 @@ void Segmenter::enumerateSegments(const LabelIndexMap& segment_map, const ImageI
 }
 
 void Segmenter::assignEdgePoints(int radius, double max_distance, const cv::Mat& points_3d, cv::Mat& img) {
-
-  double minVal;
-  double maxVal;
-  cv::Point minLoc;
-  cv::Point maxLoc;
-
-  cv::minMaxLoc(img, &minVal, &maxVal, &minLoc, &maxLoc );
-
   for (int row = 0; row < img.rows; row++) {
     for (int col = 0; col < img.cols; col++) {
       if (img.at<ushort>(row, col) == 0) {

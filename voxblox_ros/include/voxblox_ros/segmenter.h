@@ -75,7 +75,7 @@ class Segmenter {
   void publishNormalsImg(const cv::Mat& normals, const std_msgs::Header& header, ros::Publisher& pub);
 
   cv::Mat detectConcaveBoundaries(const cv::Mat& points, const cv::Mat& normals);
-  cv::Mat detectGeometricalBoundaries(const cv::Mat& points, const cv::Mat& normals);
+  cv::Mat detectDepthDiscBoundaries(const cv::Mat& points, const cv::Mat& normals);
   cv::Mat detectCannyEdgesMono(const cv::Mat& color_img);
   cv::Mat detectCannyEdgesH1H2H3(const cv::Mat& color_img);
   cv::Mat detectStructuredEdges(const cv::Mat& color_img);
@@ -92,6 +92,7 @@ class Segmenter {
 
   cv::Mat colorizeSegmentationImg(const cv::Mat& seg_img, const LabelIndexMap& segment_map);
   cv::Mat estimateNormals(const cv::Mat& points_3d, const cv::Matx33d& intrinsic_matrix);
+  cv::Mat estimateNormalsCrossProduct(const cv::Mat& depth_img);
 
   void assignEdgePoints(int radius, double max_distance, const cv::Mat& points_3d, cv::Mat& img);
   ushort assignEdgePoint(int row, int col, int radius, double max_distance, const cv::Mat& points_3d, const cv::Mat& img);
@@ -103,7 +104,7 @@ class Segmenter {
   float canny_sigma_;
   int canny_kernel_size_;
   float min_concavity_;
-  double max_dist_step_;
+  float max_dist_step_;
 
   cv::Ptr<cv::ximgproc::StructuredEdgeDetection> structured_edges_;
 
@@ -114,6 +115,8 @@ class Segmenter {
   ros::Publisher rgb_edges_pub_;
   ros::Publisher normals_pub_;
   ros::Publisher depth_inpainted_pub_;
+  ros::Publisher depth_filtered_pub_;
+  ros::Publisher depth_input_pub_;
 };
 
 }  // namespace voxblox
