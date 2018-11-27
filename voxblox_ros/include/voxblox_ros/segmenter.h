@@ -106,6 +106,13 @@ class Segmenter {
   float min_concavity_;
   float max_dist_step_;
 
+  double concave_weight_;
+  double color_weight_;
+  double edge_treshold_;
+
+  int edges_window_size_;
+  int normals_window_size_;
+
   cv::Ptr<cv::ximgproc::StructuredEdgeDetection> structured_edges_;
 
   ros::Publisher edge_img_pub_;

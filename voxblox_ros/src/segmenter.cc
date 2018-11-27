@@ -21,6 +21,12 @@ Segmenter::Segmenter(const ros::NodeHandle& nh_private) :
   nh_private_.param("seg_canny_kernel_size", canny_kernel_size_, 3);
   nh_private_.param("seg_min_concavity", min_concavity_, 0.97f);
   nh_private_.param("seg_max_dist_step", max_dist_step_, 0.005f);
+  nh_private_.param("edges_window_size", edges_window_size_, 3);
+  nh_private_.param("normals_window_size", normals_window_size_, 2);
+
+  nh_private_.param("concave_weight", concave_weight_, 1.0);
+  nh_private_.param("color_weight", color_weight_, 0.0);
+  nh_private_.param("edge_treshold", edge_treshold_, 0.0);
 
   std::string model_path = std::string(std::getenv("HOME")) + "/Downloads/model.yml.gz";
   nh_private_.param("structured_edges_model_path", model_path, model_path);
@@ -153,29 +159,54 @@ cv::Mat Segmenter::estimateNormalsCrossProduct(const cv::Mat& depth_img) {
   timing::Timer seg_normal_estimation_timer("seg_normal_estimation");
 
   cv::medianBlur(depth_img, depth_img, 5);
-  cv::Mat normals(depth_img.rows, depth_img.cols, CV_32FC3);
+  cv::Mat normals(depth_img.rows-2*normals_window_size_, depth_img.cols-2*normals_window_size_, CV_32FC3);
 
-  int neighborhood_radius = 3;
+  for (int row = normals_window_size_; row < depth_img.rows - normals_window_size_; row++) {
+    for (int col = normals_window_size_; col < depth_img.cols - normals_window_size_; col++) {
 
-  for (int row = neighborhood_radius; row < depth_img.rows - neighborhood_radius; row++) {
-    for (int col = neighborhood_radius; col < depth_img.cols - neighborhood_radius; col++) {
+      // cardinal directions relative to the current point
+      int row_nw = row-normals_window_size_;
+      int col_nw = col-normals_window_size_;
+      cv::Vec3d nw(row_nw, col_nw, static_cast<double>(depth_img.at<uint16_t>(row_nw, col_nw)));
 
-      int row_a = row-neighborhood_radius;
-      int col_a = col-neighborhood_radius;
-      cv::Vec3d a(row_a, col_a, static_cast<double>(depth_img.at<uint16_t>(row_a, col_a)));
+      int row_n = row-normals_window_size_;
+      int col_n = col;
+      cv::Vec3d n(row_n, col_n, static_cast<double>(depth_img.at<uint16_t>(row_n, col_n)));
 
-      int row_b = row-neighborhood_radius;
-      int col_b = col+neighborhood_radius;
-      cv::Vec3d b(row_b, col_b, static_cast<double>(depth_img.at<uint16_t>(row_b, col_b)));
+      int row_ne = row-normals_window_size_;
+      int col_ne = col+normals_window_size_;;
+      cv::Vec3d ne(row_ne, col_ne, static_cast<double>(depth_img.at<uint16_t>(row_ne, col_ne)));
 
-      int row_c = row+neighborhood_radius;
-      int col_c = col;
-      cv::Vec3d c(row_c, col_c, static_cast<double>(depth_img.at<uint16_t>(row_c, col_c)));
+      int row_e = row;
+      int col_e = col+normals_window_size_;
+      cv::Vec3d e(row_e, col_e, static_cast<double>(depth_img.at<uint16_t>(row_e, col_e)));
 
-      cv::Vec3d n = (b-a).cross(c-a);
-      normals.at<cv::Vec3f>(row, col) = cv::normalize(n);
+      int row_se = row+normals_window_size_;
+      int col_se = col+normals_window_size_;
+      cv::Vec3d se(row_se, col_se, static_cast<double>(depth_img.at<uint16_t>(row_se, col_se)));
+
+      int row_s = row+normals_window_size_;
+      int col_s = col;
+      cv::Vec3d s(row_s, col_s, static_cast<double>(depth_img.at<uint16_t>(row_s, col_s)));
+
+      int row_sw = row+normals_window_size_;
+      int col_sw = col-normals_window_size_;
+      cv::Vec3d sw(row_sw, col_sw, static_cast<double>(depth_img.at<uint16_t>(row_sw, col_sw)));
+
+      int row_w = row;
+      int col_w = col-normals_window_size_;
+      cv::Vec3d w(row_w, col_w, static_cast<double>(depth_img.at<uint16_t>(row_w, col_w)));
+
+      cv::Vec3d n1 = (sw-n).cross(se-n);
+      cv::Vec3d n2 = (nw-e).cross(sw-e);
+      cv::Vec3d n3 = (ne-s).cross(nw-s);
+      cv::Vec3d n4 = (se-w).cross(ne-w);
+
+      normals.at<cv::Vec3f>(row-normals_window_size_, col-normals_window_size_) = cv::normalize(0.25 * (n1 + n2 + n3 + n4));
     }
   }
+
+  cv::GaussianBlur(normals, normals, cv::Size(5,5), 0);
 
   seg_normal_estimation_timer.Stop();
 
