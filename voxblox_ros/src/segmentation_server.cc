@@ -65,7 +65,7 @@ void SegmentationServer::integrateSegmentation(const sensor_msgs::PointCloud2Con
 
   pcl::UniformSampling<pcl::PointXYZ> uniform_sampling;
   uniform_sampling.setInputCloud(cloud_pcl);
-  uniform_sampling.setRadiusSearch(tsdf_map_->voxel_size());
+  uniform_sampling.setRadiusSearch(static_cast<double>(tsdf_map_->voxel_size()));
   pcl::PointCloud<int> sub_cloud_indices;
   uniform_sampling.compute(sub_cloud_indices);
   std::cout << "Total points: " << cloud_pcl->points.size() << " Selected Points: " << sub_cloud_indices.points.size() << " "<< std::endl;
@@ -105,20 +105,18 @@ void SegmentationServer::recolorVoxbloxMeshMsgBySegmentation(voxblox_msgs::Mesh*
   // Go over all the blocks in the mesh.
   for (voxblox_msgs::MeshBlock& mesh_block : mesh_msg->mesh_blocks) {
 
-    const voxblox::BlockIndex index(mesh_block.index[0], mesh_block.index[1], mesh_block.index[2]);
-
     for (size_t vert_idx = 0u; vert_idx < mesh_block.x.size(); ++vert_idx) {
 
       constexpr float point_conv_factor = 2.0f / std::numeric_limits<uint16_t>::max();
       const float mesh_x =
           (static_cast<float>(mesh_block.x[vert_idx]) * point_conv_factor +
-           static_cast<float>(index[0])) * mesh_msg->block_edge_length;
+           static_cast<float>(mesh_block.index[0])) * mesh_msg->block_edge_length;
       const float mesh_y =
           (static_cast<float>(mesh_block.y[vert_idx]) * point_conv_factor +
-           static_cast<float>(index[1])) * mesh_msg->block_edge_length;
+           static_cast<float>(mesh_block.index[1])) * mesh_msg->block_edge_length;
       const float mesh_z =
           (static_cast<float>(mesh_block.z[vert_idx]) * point_conv_factor +
-           static_cast<float>(index[2])) * mesh_msg->block_edge_length;
+           static_cast<float>(mesh_block.index[2])) * mesh_msg->block_edge_length;
 
       const SegmentedVoxel* voxel = segment_layer.getVoxelPtrByCoordinates(
           Point(mesh_x, mesh_y, mesh_z));
@@ -263,7 +261,7 @@ void SegmentationServer::convertToCloud(const sensor_msgs::ImageConstPtr& depth_
   const T* depth_row = reinterpret_cast<const T*>(&depth_msg->data[0]);
   int row_step = depth_msg->step / sizeof(T);
   const uint8_t* rgb = &rgb_msg->data[0];
-  int rgb_skip = rgb_msg->step - rgb_msg->width * 3;
+  uint rgb_skip = rgb_msg->step - rgb_msg->width * 3;
 
   sensor_msgs::PointCloud2Iterator<float> iter_x(*cloud, "x");
   sensor_msgs::PointCloud2Iterator<float> iter_y(*cloud, "y");
@@ -311,8 +309,8 @@ bool SegmentationServer::extractSegmentMesh(voxblox_msgs::ExtractSegmentMeshRequ
 }
 
 bool SegmentationServer::extractSegmentIDFromRay(voxblox_msgs::ExtractSegmentIdFromRayRequest& req, voxblox_msgs::ExtractSegmentIdFromRayResponse& res) {
-  Point origin(req.ray_origin.x, req.ray_origin.y, req.ray_origin.z);
-  Point direction(req.ray_direction.x, req.ray_direction.y, req.ray_direction.z);
+  Point origin(static_cast<float>(req.ray_origin.x), static_cast<float>(req.ray_origin.y), static_cast<float>(req.ray_origin.z));
+  Point direction(static_cast<float>(req.ray_direction.x), static_cast<float>(req.ray_direction.y), static_cast<float>(req.ray_direction.z));
   Label segment_id = segment_tool_->getSegmentIdFromRay(origin, direction);
 
   ROS_INFO_STREAM("ray hit segment " << segment_id);

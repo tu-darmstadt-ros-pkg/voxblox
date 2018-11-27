@@ -39,21 +39,21 @@ void printMinMax(cv::Mat& mat, const std::string& mat_name) {
   float max = -std::numeric_limits<float>::max();
   float min = std::numeric_limits<float>::max();
 
-  int nRows = mat.rows;
-  int nCols = mat.cols * mat.channels();
+  int n_rows = mat.rows;
+  int n_cols = mat.cols * mat.channels();
 
   if (mat.isContinuous())
   {
-    nCols *= nRows;
-    nRows = 1;
+    n_cols *= n_rows;
+    n_rows = 1;
   }
 
   int i,j;
   float* p;
-  for( i = 0; i < nRows; ++i)
+  for( i = 0; i < n_rows; ++i)
   {
     p = mat.ptr<float>(i);
-    for ( j = 0; j < nCols; ++j)
+    for ( j = 0; j < n_cols; ++j)
     {
       max = std::max(max, p[j]);
       min = std::min(min, p[j]);
@@ -127,9 +127,11 @@ void Segmenter::segmentRgbdImage(const sensor_msgs::ImageConstPtr& color_img_msg
   assignEdgePoints(radius, max_distance, points3d, segmentation_img);
 
   ImageIndexList segment_centroids(static_cast<unsigned long>(num_labels));
-  for (size_t i = 0; i < num_labels; num_labels++) {
-    segment_centroids[i] += ImageIndex(0, 0);
+  for (size_t i = 0; i < static_cast<size_t>(num_labels); num_labels++) {
+    segment_centroids[i] = ImageIndex(0, 0);
   }
+
+  int border_size = edges_window_size_ + normals_window_size_;
 
   for (size_t i = 0; i < sub_cloud_indices.size(); ++i) {
     int sub_cloud_index = sub_cloud_indices[i];
@@ -202,7 +204,7 @@ cv::Mat Segmenter::estimateNormalsCrossProduct(const cv::Mat& depth_img) {
       cv::Vec3d n(row_n, col_n, static_cast<double>(depth_img.at<uint16_t>(row_n, col_n)));
 
       int row_ne = row-normals_window_size_;
-      int col_ne = col+normals_window_size_;;
+      int col_ne = col+normals_window_size_;
       cv::Vec3d ne(row_ne, col_ne, static_cast<double>(depth_img.at<uint16_t>(row_ne, col_ne)));
 
       int row_e = row;
@@ -520,9 +522,9 @@ void Segmenter::publishImg(const cv::Mat& img, const std_msgs::Header& header, r
     msg = cv_bridge::CvImage(header, "mono16", img).toImageMsg();
   else if (img.type() == CV_32F)
   {
-    cv::Mat img_mm;
-    img.convertTo(img_mm, CV_16U, 1000);
-    msg = cv_bridge::CvImage(header, "mono16", img_mm).toImageMsg();
+    cv::Mat img_short;
+    img.convertTo(img_short, CV_16U, 65536);
+    msg = cv_bridge::CvImage(header, "mono16", img_short).toImageMsg();
   }
   else
     ROS_ERROR_STREAM("unknown img type to publish: " << img.type());
@@ -698,6 +700,4 @@ ushort Segmenter::assignEdgePoint(int row, int col, int radius, double max_dista
 
   return segment_id;
 }
-
-
 }  // namespace voxblox
