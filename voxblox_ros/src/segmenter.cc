@@ -35,6 +35,34 @@ Segmenter::Segmenter(const ros::NodeHandle& nh_private) :
 
 }
 
+void printMinMax(cv::Mat& mat, const std::string& mat_name) {
+  float max = -std::numeric_limits<float>::max();
+  float min = std::numeric_limits<float>::max();
+
+  int nRows = mat.rows;
+  int nCols = mat.cols * mat.channels();
+
+  if (mat.isContinuous())
+  {
+    nCols *= nRows;
+    nRows = 1;
+  }
+
+  int i,j;
+  float* p;
+  for( i = 0; i < nRows; ++i)
+  {
+    p = mat.ptr<float>(i);
+    for ( j = 0; j < nCols; ++j)
+    {
+      max = std::max(max, p[j]);
+      min = std::min(min, p[j]);
+    }
+  }
+
+  ROS_INFO_STREAM(mat_name << " min: " << min << " max: " << max);
+}
+
 void Segmenter::segmentRgbdImage(const sensor_msgs::ImageConstPtr& color_img_msg, const sensor_msgs::CameraInfoConstPtr& /*color_cam_info_msg*/,
                                  const sensor_msgs::ImageConstPtr& depth_img_msg, const sensor_msgs::CameraInfoConstPtr& depth_cam_info_msg,
                                  const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& cloud_msg, const pcl::PointCloud<int>& sub_cloud_indices, LabelIndexMap& segment_map)
@@ -281,27 +309,26 @@ cv::Mat Segmenter::detectDepthDiscBoundaries(const cv::Mat& points, const cv::Ma
   const int width = points.cols;
   const int height = points.rows;
 
-  cv::Mat edge_img(height, width, CV_8UC1, cv::Scalar(0));
+  cv::Mat edge_img(height, width, CV_32F, cv::Scalar(0));
   for (int row = 0; row < height; row++) {
     for (int col = 0; col < width; col++) {
+      for (int step_size = 1; step_size <= edges_window_size_; step_size++) {
 
-      getNeighbors(row, col, height, width, neighbors);
+        getNeighbors(row, col, height, width, step_size, neighbors);
 
-      float max_dist = -std::numeric_limits<float>::max();
+        float max_dist = -std::numeric_limits<float>::max();
 
-      const cv::Point3f& p = points.at<cv::Point3f>(row, col);
-      const cv::Point3f& n = normals.at<cv::Point3f>(row, col);
+        const cv::Point3f& p = points.at<cv::Point3f>(row, col);
+        const cv::Point3f& n = normals.at<cv::Point3f>(row, col);
 
-      for (const cv::Point2i& i: neighbors) {
-        const cv::Point3f& p_i = points.at<cv::Point3f>(i);
+        for (const cv::Point2i& i: neighbors) {
+          const cv::Point3f& p_i = points.at<cv::Point3f>(i);
 
-        cv::Point3f diff = p_i - p;
-        max_dist = std::max(std::abs(diff.dot(n)), max_dist);
-      }
+          cv::Point3f diff = p_i - p;
+          max_dist = std::max(std::abs(diff.dot(n)), max_dist);
+        }
 
-      if (max_dist <= max_dist_step_)
-      {
-        edge_img.at<uchar>(row, col) = 255;
+        edge_img.at<float>(row, col) += max_dist/edges_window_size_;
       }
     }
   }
@@ -319,35 +346,35 @@ cv::Mat Segmenter::detectConcaveBoundaries(const cv::Mat& points, const cv::Mat&
   int width = points.cols;
   int height = points.rows;
 
-  cv::Mat edge_img(height, width, CV_8UC1, cv::Scalar(0));
+  cv::Mat edge_img(height, width, CV_32F, cv::Scalar(0));
 
   for (int row = 0; row < height; row++) {
     for (int col = 0; col < width; col++) {
+      for (int step_size = 1; step_size <= edges_window_size_; step_size++) {
 
-      getNeighbors(row, col, height, width, neighbors);
+        getNeighbors(row, col, height, width, step_size, neighbors);
 
-      float min_concavity = std::numeric_limits<float>::max();
+        float max_concavity = -std::numeric_limits<float>::max();
 
-      const cv::Vec3f& p = points.at<cv::Vec3f>(row, col);
-      const cv::Vec3f& n = normals.at<cv::Vec3f>(row, col);
+        const cv::Vec3f& p = points.at<cv::Vec3f>(row, col);
+        const cv::Vec3f& n = normals.at<cv::Vec3f>(row, col);
 
-      for (const cv::Point2i& i: neighbors) {
-        const cv::Vec3f& p_i = points.at<cv::Vec3f>(i);
-        cv::Vec3f diff = p_i - p;
+        for (const cv::Point2i& i: neighbors) {
+          const cv::Vec3f& p_i = points.at<cv::Vec3f>(i);
 
-        if (diff.ddot(n) > 0) {
-          min_concavity = std::min(1.0f, min_concavity);
+          cv::Vec3f diff = p_i - p;
+
+          if (diff.dot(n) < 0) {
+            max_concavity = std::max(0.0f, max_concavity);
+          }
+          else {
+            const cv::Vec3f& n_i = normals.at<cv::Vec3f>(i);
+
+            max_concavity = std::max(1-n_i.dot(n), max_concavity);
+          }
         }
-        else {
-          const cv::Vec3f& n_i = normals.at<cv::Vec3f>(i);
 
-          min_concavity = std::min(n.dot(n_i), min_concavity);
-        }
-      }
-
-      if (min_concavity >= min_concavity_)
-      {
-        edge_img.at<uchar>(row, col) = 255;
+        edge_img.at<float>(row, col) += max_concavity / edges_window_size_;
       }
     }
   }
@@ -443,42 +470,39 @@ cv::Mat Segmenter::applyCanny(const cv::Mat& gray_img) {
 
   // Canny detector
   cv::Canny(blur_img, edge_img, lower_tresh, upper_tresh, canny_kernel_size_);
-  cv::bitwise_not(edge_img, edge_img);
 
   seg_canny_boundaries_timer.Stop();
 
   return edge_img;
 }
 
-void Segmenter::getNeighbors(int row, int col, int height, int width, std::vector<cv::Point2i>& neighbors) {
+void Segmenter::getNeighbors(int row, int col, int height, int width, int step_size, std::vector<cv::Point2i>& neighbors) {
 
   neighbors.clear();
-  int max_rows = height -1;
-  int max_cols = width -1;
 
   // north
-  if (row > 0) { neighbors.emplace_back(cv::Point2i(col, row-1)); };
+  if (row >= step_size) { neighbors.emplace_back(cv::Point2i(col, row-step_size)); };
 
   // south
-  if (row < max_rows) { neighbors.emplace_back(cv::Point2i(col, row+1)); };
+  if (row < height-step_size) { neighbors.emplace_back(cv::Point2i(col, row+step_size)); };
 
   // east
-  if (col < max_cols) { neighbors.emplace_back(cv::Point2i(col+1, row)); };
+  if (col < width-step_size) { neighbors.emplace_back(cv::Point2i(col+step_size, row)); };
 
   // west
-  if (col > 0) { neighbors.emplace_back(cv::Point2i(col-1,row)); };
+  if (col >= step_size) { neighbors.emplace_back(cv::Point2i(col-step_size,row)); };
 
   //  north west
-  if (row > 0 && col > 0) { neighbors.emplace_back(cv::Point2i(col-1,row-1)); };
+  if (row >= step_size && col >= step_size) { neighbors.emplace_back(cv::Point2i(col-step_size,row-step_size)); };
 
   //  north east
-  if (row > 0 && col < max_cols) { neighbors.emplace_back(cv::Point2i(col+1,row-1)); };
+  if (row >= step_size && col < width-step_size) { neighbors.emplace_back(cv::Point2i(col+step_size,row-step_size)); };
 
   //  south west
-  if (row < max_rows && col > 0) { neighbors.emplace_back(cv::Point2i(col-1,row+1)); };
+  if (row < height-step_size && col >= step_size) { neighbors.emplace_back(cv::Point2i(col-step_size,row+step_size)); };
 
   //  south east
-  if (col < max_cols && row < max_rows) { neighbors.emplace_back(cv::Point2i(col+1,row+1)); };
+  if (col < width-step_size && row < height-step_size) { neighbors.emplace_back(cv::Point2i(col+step_size,row+step_size)); };
 }
 
 void Segmenter::publishImg(const cv::Mat& img, const std_msgs::Header& header, ros::Publisher& pub) {

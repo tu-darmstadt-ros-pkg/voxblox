@@ -85,7 +85,7 @@ class Segmenter {
 
   cv::Mat applyCanny(const cv::Mat& gray_img);
 
-  void getNeighbors(int row, int col, int height, int width, std::vector<cv::Point2i>& neighbors);
+  void getNeighbors(int row, int col, int height, int width, int step_size, std::vector<cv::Point2i>& neighbors);
 
   void enumerateSegments(const LabelIndexMap& segment_map, const ImageIndexList& segment_centroids,
                          cv::Mat& img);
