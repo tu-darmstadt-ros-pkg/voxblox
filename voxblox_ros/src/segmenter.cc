@@ -94,22 +94,39 @@ void Segmenter::segmentRgbdImage(const sensor_msgs::ImageConstPtr& color_img_msg
   publishImg(depth_img->image, pcl_conversions::fromPCL(cloud_msg->header), depth_input_pub_);
 
   cv::Mat depth_img_inpainted = inpaintDepth(depth_img->image);
+
+  cv::Mat normals = estimateNormalsCrossProduct(depth_img_inpainted);
+
+  // reduce the size of the depth img to the size of the normal estimation
+  cv::Rect roi(normals_window_size_, normals_window_size_,
+               normals.cols, normals.rows);
+  depth_img_inpainted = depth_img_inpainted(roi);
+
+
   cv::Mat depth_img_smoothed = filterImage(depth_img_inpainted);
 
   cv::Mat points3d;
   cv::Matx33f intrinsic_matrix_f(depth_camera_model_.fullIntrinsicMatrix());
   cv::rgbd::depthTo3d(depth_img_smoothed, intrinsic_matrix_f, points3d);
-  //cv::Mat normals = estimateNormals(points3d, depth_camera_model_.fullIntrinsicMatrix());
-  cv::Mat normals = estimateNormalsCrossProduct(depth_img->image);
 
   cv::Mat edge_img_concave = detectConcaveBoundaries(points3d, normals);
   cv::Mat edge_img_depth_disc = detectDepthDiscBoundaries(points3d, normals);
-  cv::Mat edge_img_color = detectStructuredEdges(color_img->image);
+  cv::Mat edge_img_color = detectStructuredEdges(color_img->image(roi));
+
+  printMinMax(edge_img_concave, std::string("edge_img_concave"));
+  printMinMax(edge_img_depth_disc, std::string("edge_img_depth_disc"));
 
   timing::Timer seg_connected_components_timer("seg_connected_components");
 
-  cv::Mat edge_img = cv::min(edge_img_concave, edge_img_depth_disc);
-  edge_img = cv::min(edge_img, edge_img_color);
+  cv::Mat edge_img;
+  cv::addWeighted(edge_img_concave, concave_weight_, edge_img_depth_disc, 1.0, 0.0, edge_img);
+  printMinMax(edge_img, std::string("edge_img"));
+
+  ROS_INFO_STREAM("edge_img size: " << edge_img.rows << " x " << edge_img.cols);
+
+  cv::threshold(edge_img, edge_img, edge_treshold_, 255.0, cv::THRESH_BINARY);
+  edge_img.convertTo(edge_img, CV_8U);
+  cv::bitwise_not(edge_img, edge_img);
 
   // increase the borders a little bit before the segmentation
   cv::Mat kernel = cv::Mat::ones(2, 2, CV_8U);
@@ -131,8 +148,6 @@ void Segmenter::segmentRgbdImage(const sensor_msgs::ImageConstPtr& color_img_msg
     segment_centroids[i] = ImageIndex(0, 0);
   }
 
-  int border_size = edges_window_size_ + normals_window_size_;
-
   for (size_t i = 0; i < sub_cloud_indices.size(); ++i) {
     int sub_cloud_index = sub_cloud_indices[i];
     const pcl::PointXYZ& p = cloud_msg->points[sub_cloud_index];
@@ -145,10 +160,15 @@ void Segmenter::segmentRgbdImage(const sensor_msgs::ImageConstPtr& color_img_msg
 
     int col = sub_cloud_index % width;
     int row = sub_cloud_index / width;
-    ushort label = segmentation_img.at<ushort>(row, col);
+
+    if (row < normals_window_size_ || col < normals_window_size_
+        || row >= depth_img->image.rows - normals_window_size_ || col >= depth_img->image.cols - normals_window_size_)
+      continue;
+
+    ushort label = segmentation_img.at<ushort>(row-normals_window_size_, col-normals_window_size_);
 
     segment_map[label].emplace_back(i);
-    segment_centroids[label] += ImageIndex(row, col);
+    segment_centroids[label] += ImageIndex(row-normals_window_size_, col-normals_window_size_);
   }
 
   if (segmentation_pub_.getNumSubscribers() > 0) {
@@ -446,7 +466,6 @@ cv::Mat Segmenter::detectStructuredEdges(const cv::Mat& color_img) {
   //structured_edges_->edgesNms(edges, orientation_map, edge_nms, 2, 0, 1, true);
   edges.convertTo(edges, CV_8UC1, 255.0);
   cv::threshold(edges, edges, 50, 255, cv::THRESH_BINARY);
-  cv::bitwise_not(edges, edges);
 
   seg_canny_boundaries_timer.Stop();
 
