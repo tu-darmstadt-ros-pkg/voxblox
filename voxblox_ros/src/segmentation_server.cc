@@ -279,7 +279,7 @@ void SegmentationServer::convertToCloud(const sensor_msgs::ImageConstPtr& depth_
       float scaled_depth = unit_scaling * float(depth);
 
       // Check for invalid measurements
-      if (depth == 0) {
+      if (!isDepthValid(depth)) {
         *iter_x = *iter_y = *iter_z = NAN;
       } else {
         // Fill in XYZ
@@ -337,5 +337,15 @@ bool SegmentationServer::extractSegmentMesh(Label segment_id, sensor_msgs::Point
   cloud_msg.header.stamp = ros::Time::now();
 
   return true;
+}
+
+template<>
+bool SegmentationServer::isDepthValid(float depth) {
+  return depth > 0.0001f;
+}
+
+template<>
+bool SegmentationServer::isDepthValid(uint16_t depth) {
+  return depth != 0;
 }
 }  // namespace voxblox

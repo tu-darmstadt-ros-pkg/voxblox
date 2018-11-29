@@ -64,6 +64,9 @@ class SegmentationServer : public TsdfServer {
                       const sensor_msgs::CameraInfoConstPtr& depth_cam_info,
                       const sensor_msgs::PointCloud2::Ptr& cloud);
 
+  template <typename T>
+  bool isDepthValid(T depth);
+
   bool extractSegmentMesh(Label segment_id, sensor_msgs::PointCloud2& cloud_msg, shape_msgs::Mesh& mesh_msg);
 
   // Publish markers for visualization.
