@@ -56,7 +56,7 @@ void SegmentationServer::updateMesh() {
   publish_mesh_timer.Stop();
 }
 
-void SegmentationServer::integrateSegmentation(const sensor_msgs::PointCloud2ConstPtr& pointcloud, const sensor_msgs::ImageConstPtr& color_img, const sensor_msgs::ImageConstPtr& depth_img,
+void SegmentationServer::integrateSegmentation(const sensor_msgs::PointCloud2ConstPtr& pointcloud, const cv::Mat& color_img, const cv::Mat& depth_img,
                                                const sensor_msgs::CameraInfoConstPtr& color_cam_info, const sensor_msgs::CameraInfoConstPtr& depth_cam_info) {
 
   pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_pcl(new pcl::PointCloud<pcl::PointXYZ>);
@@ -214,38 +214,43 @@ void SegmentationServer::publishPointclouds() {
   segment_pointclouds_pub_.publish(pointcloud_list);
 }
 
-void SegmentationServer::rgbdCallback(const sensor_msgs::ImageConstPtr& color_img, const sensor_msgs::ImageConstPtr& depth_img,
-                                      const sensor_msgs::CameraInfoConstPtr& color_cam_info, const sensor_msgs::CameraInfoConstPtr& depth_cam_info) {
+void SegmentationServer::rgbdCallback(const sensor_msgs::ImageConstPtr& color_img_msg, const sensor_msgs::ImageConstPtr& depth_img_msg,
+                                      const sensor_msgs::CameraInfoConstPtr& color_cam_info_msg, const sensor_msgs::CameraInfoConstPtr& depth_cam_info_msg) {
 
-  sensor_msgs::PointCloud2::Ptr cloud = boost::make_shared<sensor_msgs::PointCloud2>();
-  cloud->header = depth_img->header;
-  cloud->height = depth_img->height;
-  cloud->width  = depth_img->width;
-  cloud->is_dense = false;
-  cloud->is_bigendian = false;
+  int downsampling_factor = 2;
+  cv::Mat depth_img_downsampled = downSampleNonZeroMedian(depth_img_msg, downsampling_factor);
+  cv::Mat color_img_downsampled = downSampleColorImg(color_img_msg, downsampling_factor);
 
-  sensor_msgs::PointCloud2Modifier pcd_modifier(*cloud);
-  pcd_modifier.setPointCloud2FieldsByString(2, "xyz", "rgb");
+  sensor_msgs::CameraInfoPtr color_cam_info = downsampleCameraInfo(color_cam_info_msg, downsampling_factor);
+  sensor_msgs::CameraInfoPtr depth_cam_info = downsampleCameraInfo(depth_cam_info_msg, downsampling_factor);
 
-  if (depth_img->encoding == "32FC1") {
-    convertToCloud<float>(depth_img, color_img, depth_cam_info, cloud);
+  sensor_msgs::PointCloud2::Ptr cloud_msg = boost::make_shared<sensor_msgs::PointCloud2>();
+  pcl::PointCloud<pcl::PointXYZRGB> cloud(depth_img_downsampled.rows, depth_img_downsampled.cols);
+
+  if (depth_img_msg->encoding == "32FC1") {
+    convertToCloud<float>(depth_img_downsampled, color_img_downsampled, depth_cam_info, cloud);
   }
-  else if (depth_img->encoding == "16UC1") {
-    convertToCloud<uint16_t>(depth_img, color_img, depth_cam_info, cloud);
+  else if (depth_img_msg->encoding == "16UC1") {
+    convertToCloud<uint16_t>(depth_img_downsampled, color_img_downsampled, depth_cam_info, cloud);
   }
   else {
-    ROS_ERROR("unsupported depth image encoding: %s", depth_img->encoding.c_str());
+    ROS_ERROR("unsupported depth image encoding: %s", depth_img_msg->encoding.c_str());
   }
 
-  insertPointcloud(cloud);
-  integrateSegmentation(cloud, color_img, depth_img, color_cam_info, depth_cam_info);
+  pcl::io::savePCDFile("/home/marius/cloud_downsampled.pcd", cloud);
+
+  pcl::toROSMsg(cloud, *cloud_msg);
+  cloud_msg->header = depth_img_msg->header;
+
+  insertPointcloud(cloud_msg);
+  integrateSegmentation(cloud_msg, color_img_downsampled, depth_img_downsampled, color_cam_info, depth_cam_info);
 }
 
 template <typename T>
-void SegmentationServer::convertToCloud(const sensor_msgs::ImageConstPtr& depth_msg,
-                                        const sensor_msgs::ImageConstPtr& rgb_msg,
+void SegmentationServer::convertToCloud(const cv::Mat& depth_img,
+                                        const cv::Mat& rgb_img,
                                         const sensor_msgs::CameraInfoConstPtr& depth_cam_info,
-                                        const sensor_msgs::PointCloud2::Ptr& cloud) {
+                                        pcl::PointCloud<pcl::PointXYZRGB>& cloud) {
   // Use correct principal point from calibration
   float center_x = static_cast<float>(depth_cam_info->K[2]);
   float center_y = static_cast<float>(depth_cam_info->K[5]);
@@ -258,41 +263,29 @@ void SegmentationServer::convertToCloud(const sensor_msgs::ImageConstPtr& depth_
   float f_x = static_cast<float>(depth_cam_info->K[0]);
   float f_y = static_cast<float>(depth_cam_info->K[4]);
 
-  const T* depth_row = reinterpret_cast<const T*>(&depth_msg->data[0]);
-  int row_step = depth_msg->step / sizeof(T);
-  const uint8_t* rgb = &rgb_msg->data[0];
-  uint rgb_skip = rgb_msg->step - rgb_msg->width * 3;
+  for (int row = 0; row < depth_img.rows; row++) {
+    for (int col = 0; col < depth_img.cols; col++) {
 
-  sensor_msgs::PointCloud2Iterator<float> iter_x(*cloud, "x");
-  sensor_msgs::PointCloud2Iterator<float> iter_y(*cloud, "y");
-  sensor_msgs::PointCloud2Iterator<float> iter_z(*cloud, "z");
-  sensor_msgs::PointCloud2Iterator<uint8_t> iter_r(*cloud, "r");
-  sensor_msgs::PointCloud2Iterator<uint8_t> iter_g(*cloud, "g");
-  sensor_msgs::PointCloud2Iterator<uint8_t> iter_b(*cloud, "b");
-  sensor_msgs::PointCloud2Iterator<uint8_t> iter_a(*cloud, "a");
-
-  for (int v = 0; v < int(cloud->height); ++v, depth_row += row_step, rgb += rgb_skip)
-  {
-    for (int u = 0; u < int(cloud->width); ++u, rgb += 3, ++iter_x, ++iter_y, ++iter_z, ++iter_a, ++iter_r, ++iter_g, ++iter_b)
-    {
-      T depth = depth_row[u];
+      const cv::Vec3b& rgb = rgb_img.at<cv::Vec3b>(row, col);
+      T depth = depth_img.at<T>(row, col);
       float scaled_depth = unit_scaling * float(depth);
+
+      pcl::PointXYZRGB& p = cloud.at(col, row);
 
       // Check for invalid measurements
       if (!isDepthValid(depth)) {
-        *iter_x = *iter_y = *iter_z = NAN;
+        p.x = p.y = p.z = NAN;
       } else {
         // Fill in XYZ
-        *iter_x = (u - center_x) * scaled_depth / f_x;
-        *iter_y = (v - center_y) * scaled_depth / f_y;
-        *iter_z = scaled_depth;
+        p.x = (col - center_x) * scaled_depth / f_x;
+        p.y = (row - center_y) * scaled_depth / f_y;
+        p.z = scaled_depth;
       }
 
       // Fill in color
-      *iter_a = 255;
-      *iter_r = rgb[0];
-      *iter_g = rgb[1];
-      *iter_b = rgb[2];
+      p.r = rgb[0];
+      p.g = rgb[1];
+      p.b = rgb[2];
     }
   }
 }

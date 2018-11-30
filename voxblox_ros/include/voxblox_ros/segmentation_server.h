@@ -52,17 +52,17 @@ class SegmentationServer : public TsdfServer {
  protected:
 
   void recolorVoxbloxMeshMsgBySegmentation(voxblox_msgs::Mesh* mesh_msg);
-  void integrateSegmentation(const sensor_msgs::PointCloud2ConstPtr& pointcloud, const sensor_msgs::ImageConstPtr& color_img, const sensor_msgs::ImageConstPtr& depth_img,
+  void integrateSegmentation(const sensor_msgs::PointCloud2ConstPtr& pointcloud, const cv::Mat& color_img, const cv::Mat& depth_img,
                              const sensor_msgs::CameraInfoConstPtr& color_cam_info, const sensor_msgs::CameraInfoConstPtr& depth_cam_info);
   inline void fillPointcloudWithMesh(const MeshLayer::ConstPtr& mesh_layer, pcl::PointCloud<pcl::PointNormal>& pointcloud);
   void publishSegmentPointclouds();
   inline void fillMeshMsgWithMesh(const MeshLayer::ConstPtr& mesh_layer, shape_msgs::Mesh& mesh_msg);
 
   template <typename T>
-  void convertToCloud(const sensor_msgs::ImageConstPtr& depth_msg,
-                      const sensor_msgs::ImageConstPtr& rgb_msg,
+  void convertToCloud(const cv::Mat& depth_msg,
+                      const cv::Mat& rgb_msg,
                       const sensor_msgs::CameraInfoConstPtr& depth_cam_info,
-                      const sensor_msgs::PointCloud2::Ptr& cloud);
+                      pcl::PointCloud<pcl::PointXYZRGB>& cloud);
 
   template <typename T>
   bool isDepthValid(T depth);

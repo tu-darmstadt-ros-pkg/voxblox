@@ -63,8 +63,8 @@ void printMinMax(cv::Mat& mat, const std::string& mat_name) {
   ROS_INFO_STREAM(mat_name << " min: " << min << " max: " << max);
 }
 
-void Segmenter::segmentRgbdImage(const sensor_msgs::ImageConstPtr& color_img_msg, const sensor_msgs::CameraInfoConstPtr& /*color_cam_info_msg*/,
-                                 const sensor_msgs::ImageConstPtr& depth_img_msg, const sensor_msgs::CameraInfoConstPtr& depth_cam_info_msg,
+void Segmenter::segmentRgbdImage(const cv::Mat& color_img, const sensor_msgs::CameraInfoConstPtr& /*color_cam_info_msg*/,
+                                 const cv::Mat& depth_img, const sensor_msgs::CameraInfoConstPtr& depth_cam_info_msg,
                                  const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& cloud_msg, const pcl::PointCloud<int>& sub_cloud_indices, LabelIndexMap& segment_map)
  {
 
@@ -78,9 +78,9 @@ void Segmenter::segmentRgbdImage(const sensor_msgs::ImageConstPtr& color_img_msg
 
   segment_map.clear();
 
-  CvImageConstPtr depth_img, color_img;
+  //CvImageConstPtr depth_img, color_img;
 
-  color_img = cv_bridge::toCvShare(color_img_msg, sensor_msgs::image_encodings::RGB8);
+  /*color_img = cv_bridge::toCvShare(color_img_msg, sensor_msgs::image_encodings::RGB8);
 
   // convert the unit to mm if needed
   if (depth_img_msg->encoding == "32FC1") {
@@ -90,10 +90,10 @@ void Segmenter::segmentRgbdImage(const sensor_msgs::ImageConstPtr& color_img_msg
   } else {
     depth_img = cv_bridge::toCvShare(depth_img_msg, sensor_msgs::image_encodings::TYPE_16UC1);
   }
+*/
+  publishImg(depth_img, pcl_conversions::fromPCL(cloud_msg->header), depth_input_pub_);
 
-  publishImg(depth_img->image, pcl_conversions::fromPCL(cloud_msg->header), depth_input_pub_);
-
-  cv::Mat depth_img_inpainted = inpaintDepth(depth_img->image);
+  cv::Mat depth_img_inpainted = inpaintDepth(depth_img);
 
   cv::Mat normals = estimateNormalsCrossProduct(depth_img_inpainted);
 
@@ -101,7 +101,6 @@ void Segmenter::segmentRgbdImage(const sensor_msgs::ImageConstPtr& color_img_msg
   cv::Rect roi(normals_window_size_, normals_window_size_,
                normals.cols, normals.rows);
   depth_img_inpainted = depth_img_inpainted(roi);
-
 
   cv::Mat depth_img_smoothed = filterImage(depth_img_inpainted);
 
@@ -111,7 +110,7 @@ void Segmenter::segmentRgbdImage(const sensor_msgs::ImageConstPtr& color_img_msg
 
   cv::Mat edge_img_concave = detectConcaveBoundaries(points3d, normals);
   cv::Mat edge_img_depth_disc = detectDepthDiscBoundaries(points3d, normals);
-  cv::Mat edge_img_color = detectStructuredEdges(color_img->image(roi));
+  cv::Mat edge_img_color = detectStructuredEdges(color_img(roi));
 
   printMinMax(edge_img_concave, std::string("edge_img_concave"));
   printMinMax(edge_img_depth_disc, std::string("edge_img_depth_disc"));
@@ -121,8 +120,6 @@ void Segmenter::segmentRgbdImage(const sensor_msgs::ImageConstPtr& color_img_msg
   cv::Mat edge_img;
   cv::addWeighted(edge_img_concave, concave_weight_, edge_img_depth_disc, 1.0, 0.0, edge_img);
   printMinMax(edge_img, std::string("edge_img"));
-
-  ROS_INFO_STREAM("edge_img size: " << edge_img.rows << " x " << edge_img.cols);
 
   cv::threshold(edge_img, edge_img, edge_treshold_, 255.0, cv::THRESH_BINARY);
   edge_img.convertTo(edge_img, CV_8U);
@@ -161,8 +158,8 @@ void Segmenter::segmentRgbdImage(const sensor_msgs::ImageConstPtr& color_img_msg
     int col = sub_cloud_index % width;
     int row = sub_cloud_index / width;
 
-    if (row < normals_window_size_ || col < normals_window_size_
-        || row >= depth_img->image.rows - normals_window_size_ || col >= depth_img->image.cols - normals_window_size_)
+    if (row < normals_window_size_ || col < normals_window_size_ ||
+        row >= depth_img.rows - normals_window_size_ || col >= depth_img.cols - normals_window_size_)
       continue;
 
     ushort label = segmentation_img.at<ushort>(row-normals_window_size_, col-normals_window_size_);
@@ -181,7 +178,7 @@ void Segmenter::segmentRgbdImage(const sensor_msgs::ImageConstPtr& color_img_msg
   publishImg(edge_img, pcl_conversions::fromPCL(cloud_msg->header), edge_img_pub_);
   publishImg(edge_img_concave, pcl_conversions::fromPCL(cloud_msg->header), concave_edges_pub_);
   publishImg(edge_img_depth_disc, pcl_conversions::fromPCL(cloud_msg->header), depth_disc_edges_pub_);
-  publishImg(edge_img_color, pcl_conversions::fromPCL(cloud_msg->header), rgb_edges_pub_);
+  //publishImg(edge_img_color, pcl_conversions::fromPCL(cloud_msg->header), rgb_edges_pub_);
   publishImg(depth_img_inpainted, pcl_conversions::fromPCL(cloud_msg->header), depth_inpainted_pub_);
   publishImg(depth_img_smoothed, pcl_conversions::fromPCL(cloud_msg->header), depth_filtered_pub_);
   publishNormalsImg(normals, pcl_conversions::fromPCL(cloud_msg->header), normals_pub_);
@@ -405,12 +402,6 @@ cv::Mat Segmenter::detectConcaveBoundaries(const cv::Mat& points, const cv::Mat&
   return edge_img;
 }
 
-uchar imageMedian(const cv::Mat& img) {
-  std::vector<uchar> vec_from_mat(img.begin<uchar>(), img.end<uchar>());
-  std::nth_element(vec_from_mat.begin(), vec_from_mat.begin() + vec_from_mat.size() / 2, vec_from_mat.end());
-  return vec_from_mat[vec_from_mat.size() / 2];
-}
-
 cv::Mat Segmenter::detectCannyEdgesMono(const cv::Mat& color_img) {
   timing::Timer seg_canny_boundaries_timer("seg_canny_mono_edges");
   int width = color_img.cols;
@@ -483,7 +474,7 @@ cv::Mat Segmenter::applyCanny(const cv::Mat& gray_img) {
   // Reduce noise with blurring
   cv::blur(gray_img, blur_img, cv::Size(7, 7));
 
-  float median = static_cast<float>(imageMedian(blur_img));
+  float median = static_cast<float>(imageMedian<uint8_t>(blur_img));
 
   // apply automatic canny edge detection using the image median
   int lower_tresh = static_cast<int>(std::max(0, static_cast<int>((1.0f - canny_sigma_) * median)));

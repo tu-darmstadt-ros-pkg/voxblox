@@ -45,7 +45,7 @@
 #include "voxblox_ros/mesh_vis.h"
 #include "voxblox_ros/ptcloud_vis.h"
 #include "voxblox_ros/transformer.h"
-
+#include "voxblox_ros/image_operations.h"
 
 namespace voxblox {
 
@@ -58,8 +58,8 @@ class Segmenter {
   typedef boost::shared_ptr<cv_bridge::CvImage> CvImagePtr;
   typedef boost::shared_ptr<cv_bridge::CvImage const> CvImageConstPtr;
 
-  void segmentRgbdImage(const sensor_msgs::ImageConstPtr& color_img, const sensor_msgs::CameraInfoConstPtr& color_cam_info,
-                        const sensor_msgs::ImageConstPtr& depth_img, const sensor_msgs::CameraInfoConstPtr& depth_cam_info,
+  void segmentRgbdImage(const cv::Mat& color_img, const sensor_msgs::CameraInfoConstPtr& color_cam_info,
+                        const cv::Mat& depth_img, const sensor_msgs::CameraInfoConstPtr& depth_cam_info,
                         const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& cloud, const pcl::PointCloud<int>& sub_cloud_indices, LabelIndexMap& segment_map);
 
   Color getSegmentColor(uint segment);
