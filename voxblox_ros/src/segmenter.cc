@@ -137,9 +137,11 @@ void Segmenter::segmentRgbdImage(const cv::Mat& color_img, const sensor_msgs::Ca
   seg_connected_components_timer.Stop();
 
   // TODO: add parameters
-  int radius = 3;
-  double max_distance = 0.025;
+  int radius = 5;
+  double max_distance = 0.05;
+  timing::Timer assign_edge_points_timer("seg_assign_edge_points");
   assignEdgePoints(radius, max_distance, points3d, segmentation_img);
+  assign_edge_points_timer.Stop();
 
   ImageIndexList segment_centroids(static_cast<unsigned long>(num_labels));
   for (size_t i = 0; i < static_cast<size_t>(num_labels); i++) {
@@ -666,10 +668,12 @@ void Segmenter::enumerateSegments(const LabelIndexMap& segment_map, const ImageI
 }
 
 void Segmenter::assignEdgePoints(int radius, double max_distance, const cv::Mat& points_3d, cv::Mat& img) {
+  // prevent the expansion of the segments by using the unassigned segmentation image for the process
+  cv::Mat seg_img_orig = img.clone();
   for (int row = 0; row < img.rows; row++) {
     for (int col = 0; col < img.cols; col++) {
       if (img.at<ushort>(row, col) == 0) {
-        img.at<ushort>(row, col) = assignEdgePoint(row, col, radius, max_distance, points_3d, img);
+        img.at<ushort>(row, col) = assignEdgePoint(row, col, radius, max_distance, points_3d, seg_img_orig);
       }
     }
   }
