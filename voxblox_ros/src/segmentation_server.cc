@@ -63,30 +63,38 @@ void SegmentationServer::integrateSegmentation(const sensor_msgs::PointCloud2Con
 
   pcl::fromROSMsg(*pointcloud, *cloud_pcl);
 
-  pcl::UniformSampling<pcl::PointXYZ> uniform_sampling;
+  /*pcl::UniformSampling<pcl::PointXYZ> uniform_sampling;
   uniform_sampling.setInputCloud(cloud_pcl);
-  uniform_sampling.setRadiusSearch(static_cast<double>(tsdf_map_->voxel_size()));
-  pcl::PointCloud<int> sub_cloud_indices;
+  uniform_sampling.setRadiusSearch(0.001);
   uniform_sampling.compute(sub_cloud_indices);
   std::cout << "Total points: " << cloud_pcl->points.size() << " Selected Points: " << sub_cloud_indices.points.size() << " "<< std::endl;
+*/
+
+  pcl::PointCloud<int> sub_cloud_indices;
 
   Pointcloud points_C;
-  points_C.reserve(sub_cloud_indices.size());
-  for (size_t i = 0; i < sub_cloud_indices.size(); ++i) {
+  points_C.reserve(cloud_pcl->points.size());
 
-    const pcl::PointXYZ& p = cloud_pcl->points[sub_cloud_indices[i]];
+  int normals_border_size = segmenter_.getNormalsWindowSize();
+  for (int col = normals_border_size; col < depth_img.cols - normals_border_size; ++col) {
+    for (int row = normals_border_size; row < depth_img.rows - normals_border_size; ++row) {
 
-    if (!std::isfinite(p.x) ||
-        !std::isfinite(p.y) ||
-        !std::isfinite(p.z)) {
-      continue;
+      const pcl::PointXYZ& p = cloud_pcl->at(col, row);
+
+      if (!std::isfinite(p.x) ||
+          !std::isfinite(p.y) ||
+          !std::isfinite(p.z)) {
+        continue;
+      }
+
+      points_C.push_back(Point(p.x, p.y, p.z));
     }
-
-    points_C.push_back(Point(p.x, p.y, p.z));
   }
 
   LabelIndexMap segment_map;
   segmenter_.segmentRgbdImage(color_img, color_cam_info, depth_img, depth_cam_info, cloud_pcl, sub_cloud_indices, segment_map);
+
+  std::cout << "points size: " << points_C.size() << std::endl;
 
   timing::Timer seg_integrate_timer("seg_integrate_segmentation");
   seg_tsdf_integrator_->integrateSegmentedPointCloud(T_G_C_current_, points_C, segment_map, segmenter_.getColorMap());
@@ -225,7 +233,7 @@ void SegmentationServer::rgbdCallback(const sensor_msgs::ImageConstPtr& color_im
   sensor_msgs::CameraInfoPtr depth_cam_info = downsampleCameraInfo(depth_cam_info_msg, downsampling_factor);
 
   sensor_msgs::PointCloud2::Ptr cloud_msg = boost::make_shared<sensor_msgs::PointCloud2>();
-  pcl::PointCloud<pcl::PointXYZRGB> cloud(depth_img_downsampled.rows, depth_img_downsampled.cols);
+  pcl::PointCloud<pcl::PointXYZRGB> cloud(depth_img_downsampled.cols, depth_img_downsampled.rows);
 
   if (depth_img_msg->encoding == "32FC1") {
     convertToCloud<float>(depth_img_downsampled, color_img_downsampled, depth_cam_info, cloud);
@@ -236,8 +244,6 @@ void SegmentationServer::rgbdCallback(const sensor_msgs::ImageConstPtr& color_im
   else {
     ROS_ERROR("unsupported depth image encoding: %s", depth_img_msg->encoding.c_str());
   }
-
-  pcl::io::savePCDFile("/home/marius/cloud_downsampled.pcd", cloud);
 
   pcl::toROSMsg(cloud, *cloud_msg);
   cloud_msg->header = depth_img_msg->header;

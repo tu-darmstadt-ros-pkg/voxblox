@@ -136,36 +136,40 @@ void Segmenter::segmentRgbdImage(const cv::Mat& color_img, const sensor_msgs::Ca
 
   seg_connected_components_timer.Stop();
 
-  int radius = 5;
-  double max_distance = 0.1;
+  // TODO: add parameters
+  int radius = 3;
+  double max_distance = 0.025;
   assignEdgePoints(radius, max_distance, points3d, segmentation_img);
 
   ImageIndexList segment_centroids(static_cast<unsigned long>(num_labels));
-  for (size_t i = 0; i < static_cast<size_t>(num_labels); num_labels++) {
+  for (size_t i = 0; i < static_cast<size_t>(num_labels); i++) {
     segment_centroids[i] = ImageIndex(0, 0);
   }
 
-  for (size_t i = 0; i < sub_cloud_indices.size(); ++i) {
-    int sub_cloud_index = sub_cloud_indices[i];
-    const pcl::PointXYZ& p = cloud_msg->points[sub_cloud_index];
+  int i = 0;
+  for (int col = normals_window_size_; col < depth_img.cols - normals_window_size_; ++col) {
+    for (int row = normals_window_size_; row < depth_img.rows - normals_window_size_; ++row) {
+      const pcl::PointXYZ& p = cloud_msg->at(col, row);
 
-    if (!std::isfinite(p.x) ||
-        !std::isfinite(p.y) ||
-        !std::isfinite(p.z)) {
-      continue;
+
+      if (!std::isfinite(p.x) ||
+          !std::isfinite(p.y) ||
+          !std::isfinite(p.z)) {
+        continue;
+      }
+
+      ushort label = segmentation_img.at<ushort>(row-normals_window_size_, col-normals_window_size_);
+
+      if (label >= num_labels) {
+        ROS_INFO_STREAM("label: " << label << " index: " << i << " num labels: " << num_labels);
+        continue;
+      }
+
+      segment_map[label].emplace_back(i);
+      segment_centroids[label] += ImageIndex(row-normals_window_size_, col-normals_window_size_);
+
+      i++;
     }
-
-    int col = sub_cloud_index % width;
-    int row = sub_cloud_index / width;
-
-    if (row < normals_window_size_ || col < normals_window_size_ ||
-        row >= depth_img.rows - normals_window_size_ || col >= depth_img.cols - normals_window_size_)
-      continue;
-
-    ushort label = segmentation_img.at<ushort>(row-normals_window_size_, col-normals_window_size_);
-
-    segment_map[label].emplace_back(i);
-    segment_centroids[label] += ImageIndex(row-normals_window_size_, col-normals_window_size_);
   }
 
   if (segmentation_pub_.getNumSubscribers() > 0) {
@@ -294,9 +298,7 @@ cv::Mat Segmenter::filterImage(cv::Mat& depth_img) {
 
 cv::Mat Segmenter::colorizeSegmentationImg(const cv::Mat& seg_img, const LabelIndexMap& segment_map) {
 
-  cv::Mat seg_img_color = seg_img.clone();
-  seg_img_color.convertTo(seg_img_color, CV_8U);
-  cv::cvtColor(seg_img_color, seg_img_color, CV_GRAY2BGR);
+  cv::Mat seg_img_color(seg_img.rows, seg_img.cols, CV_8UC3);
 
   std::vector<cv::Vec3b> colors;
   colors.reserve(segment_map.size());
@@ -691,7 +693,7 @@ ushort Segmenter::assignEdgePoint(int row, int col, int radius, double max_dista
       if (circle_row == row && circle_col == col)
         continue;
 
-      if (circle_row < 0 || circle_col < 0 || circle_row >= points_3d.rows || circle_col >= points_3d.cols)
+      if (circle_row < 0 || circle_col < 0 || circle_row >= img.rows || circle_col >= img.cols)
         continue;
 
       const cv::Point3f& candidate = points_3d.at<cv::Point3f>(circle_row, circle_col);

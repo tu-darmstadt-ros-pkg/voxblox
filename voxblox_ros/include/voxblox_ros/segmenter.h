@@ -64,6 +64,7 @@ class Segmenter {
 
   Color getSegmentColor(uint segment);
 
+  int getNormalsWindowSize() const { return normals_window_size_; }
   const std::map<uint, Color>& getColorMap() { return segment_colors_; }
 
  protected:

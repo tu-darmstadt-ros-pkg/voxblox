@@ -274,6 +274,8 @@ void SegmentedTsdfIntegrator::getVisibleVoxels(const Transformation& T_G_C,
 
   DCHECK(index_getter != nullptr);
 
+  std::cout << "points size: " << points_C.size() << std::endl;
+
   const Point& origin = T_G_C.getPosition();
   const FloatingPoint max_distance = config_.max_ray_length_m;
 
