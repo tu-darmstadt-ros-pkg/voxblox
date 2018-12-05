@@ -641,7 +641,7 @@ void Segmenter::enumerateSegments(const LabelIndexMap& segment_map, const ImageI
 
     int num_pixel = static_cast<int>(segment.second.size());
 
-    if (num_pixel < 100)
+    if (num_pixel < 200)
       continue;
 
     const std::string text = std::to_string(segment_id);

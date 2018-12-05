@@ -55,7 +55,7 @@ void SegmentedTsdfIntegrator::updateSegmentedVoxel(const GlobalIndex& global_vox
   if (seg_voxel == nullptr)
     return;
 
-  if (seg_voxel->segment_id == 0 || seg_voxel->confidence == 0) {
+  if (seg_voxel->segment_id == 0) {
     seg_voxel->segment_id = segment;
     seg_voxel->confidence = 0;
   } else if (seg_voxel->segment_id == segment) {
