@@ -69,8 +69,6 @@ class SegmentedTsdfIntegrator {
   // Returns a CONST ref of the config.
   const Config& getConfig() const { return config_; }
 
-  void updateCameraModel(const Eigen::Matrix<FloatingPoint, 2, 1>& resolution, double focal_length);
-
   const LabelBlockIndexesMap& getSegmentBlocksMap() const { return segment_blocks_map_; }
   const Labels& getUpdatedSegments() const { return updated_segments_; }
 
@@ -118,8 +116,6 @@ class SegmentedTsdfIntegrator {
   FloatingPoint voxel_size_inv_;
   FloatingPoint voxels_per_side_inv_;
   FloatingPoint block_size_inv_;
-
-  CameraModel depth_cam_model_;
 
   VoxelIndexMap visible_voxels_;
   LabelIndexMap segment_map_;

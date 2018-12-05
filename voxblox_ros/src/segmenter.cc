@@ -153,7 +153,6 @@ void Segmenter::segmentRgbdImage(const cv::Mat& color_img, const sensor_msgs::Ca
     for (int row = normals_window_size_; row < depth_img.rows - normals_window_size_; ++row) {
       const pcl::PointXYZ& p = cloud_msg->at(col, row);
 
-
       if (!std::isfinite(p.x) ||
           !std::isfinite(p.y) ||
           !std::isfinite(p.z)) {

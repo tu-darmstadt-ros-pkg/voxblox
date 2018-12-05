@@ -263,11 +263,6 @@ void SegmentedTsdfIntegrator::integrateSegmentedPointCloud(const Transformation&
   num_frames_ += 1;
 }
 
-void SegmentedTsdfIntegrator::updateCameraModel(const Eigen::Matrix<FloatingPoint, 2, 1>& resolution, double focal_length)
-{
-  depth_cam_model_.setIntrinsicsFromFocalLength(resolution, focal_length, config_.min_ray_length_m, config_.max_ray_length_m);
-}
-
 void SegmentedTsdfIntegrator::getVisibleVoxels(const Transformation& T_G_C,
                                                          const Pointcloud& points_C,
                                                          ThreadSafeIndex* index_getter) {
