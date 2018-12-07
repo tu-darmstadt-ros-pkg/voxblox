@@ -24,6 +24,7 @@
 #include <pcl/segmentation/rgb_plane_coefficient_comparator.h>
 #include <pcl/filters/fast_bilateral.h>
 #include <pcl/io/point_cloud_image_extractors.h>
+#include <pcl/octree/octree_pointcloud_pointvector.h>
 
 #include <opencv2/opencv.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
@@ -53,14 +54,16 @@ class Segmenter {
  public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
-  Segmenter(const ros::NodeHandle& nh);
+  Segmenter(const ros::NodeHandle& nh, float voxel_size);
 
   typedef boost::shared_ptr<cv_bridge::CvImage> CvImagePtr;
   typedef boost::shared_ptr<cv_bridge::CvImage const> CvImageConstPtr;
 
+  typedef pcl::octree::OctreePointCloudPointVector<pcl::PointXYZ> Octree;
+
   void segmentRgbdImage(const cv::Mat& color_img, const sensor_msgs::CameraInfoConstPtr& color_cam_info,
                         const cv::Mat& depth_img, const sensor_msgs::CameraInfoConstPtr& depth_cam_info,
-                        const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& cloud, const pcl::PointCloud<int>& sub_cloud_indices, LabelIndexMap& segment_map);
+                        const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& cloud_in, Pointcloud& cloud_out, LabelIndexMap& segment_map);
 
   Color getSegmentColor(uint segment);
 
@@ -88,12 +91,15 @@ class Segmenter {
 
   void getNeighbors(int row, int col, int height, int width, int step_size, std::vector<cv::Point2i>& neighbors);
 
-  void enumerateSegments(const LabelIndexMap& segment_map, const ImageIndexList& segment_centroids,
-                         cv::Mat& img);
+  void enumerateSegments(const LabelIndexMap& segment_map,
+                         const ImageIndexList& segment_centroids, cv::Mat& img);
+  ImageIndexList computeSegmentCentroids(const LabelIndexMap& segment_map, cv::Mat& segmentation_img);
 
   cv::Mat colorizeSegmentationImg(const cv::Mat& seg_img, const LabelIndexMap& segment_map);
   cv::Mat estimateNormals(const cv::Mat& points_3d, const cv::Matx33d& intrinsic_matrix);
   cv::Mat estimateNormalsCrossProduct(const cv::Mat& depth_img);
+
+  void applyVoxelGridFilter(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& cloud_in, const cv::Mat& segmentation_img, Pointcloud& cloud_out, LabelIndexMap& segment_map);
 
   void assignEdgePoints(int radius, double max_distance, const cv::Mat& points_3d, cv::Mat& img);
   ushort assignEdgePoint(int row, int col, int radius, double max_distance, const cv::Mat& points_3d, const cv::Mat& img);
@@ -101,6 +107,8 @@ class Segmenter {
   ros::NodeHandle nh_private_;
 
   std::map<uint, Color> segment_colors_;
+
+  float voxel_size_;
 
   float canny_sigma_;
   int canny_kernel_size_;

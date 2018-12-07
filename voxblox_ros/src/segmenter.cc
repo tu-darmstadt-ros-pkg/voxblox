@@ -2,8 +2,8 @@
 
 namespace voxblox {
 
-Segmenter::Segmenter(const ros::NodeHandle& nh_private) :
-  nh_private_(nh_private) {
+Segmenter::Segmenter(const ros::NodeHandle& nh_private, float voxel_size) :
+  nh_private_(nh_private), voxel_size_(voxel_size) {
 
   edge_img_pub_ = nh_private_.advertise<sensor_msgs::Image>("all_edges", 1, true);
   segmentation_pub_ = nh_private_.advertise<sensor_msgs::Image>("segmentation", 1, true);
@@ -65,33 +65,18 @@ void printMinMax(cv::Mat& mat, const std::string& mat_name) {
 
 void Segmenter::segmentRgbdImage(const cv::Mat& color_img, const sensor_msgs::CameraInfoConstPtr& /*color_cam_info_msg*/,
                                  const cv::Mat& depth_img, const sensor_msgs::CameraInfoConstPtr& depth_cam_info_msg,
-                                 const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& cloud_msg, const pcl::PointCloud<int>& sub_cloud_indices, LabelIndexMap& segment_map)
+                                 const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& cloud_in, Pointcloud& cloud_out, LabelIndexMap& segment_map)
  {
 
-  if (cloud_msg->points.empty())
+  if (cloud_in->points.empty())
     return;
-
-  int width = static_cast<int>(cloud_msg->width);
 
   image_geometry::PinholeCameraModel depth_camera_model_;
   depth_camera_model_.fromCameraInfo(depth_cam_info_msg);
 
   segment_map.clear();
 
-  //CvImageConstPtr depth_img, color_img;
-
-  /*color_img = cv_bridge::toCvShare(color_img_msg, sensor_msgs::image_encodings::RGB8);
-
-  // convert the unit to mm if needed
-  if (depth_img_msg->encoding == "32FC1") {
-    CvImagePtr depth_img_mm = cv_bridge::toCvCopy(depth_img_msg, sensor_msgs::image_encodings::TYPE_32FC1);
-    depth_img_mm->image.convertTo(depth_img_mm->image, CV_16U, 1000.0);
-    depth_img = depth_img_mm;
-  } else {
-    depth_img = cv_bridge::toCvShare(depth_img_msg, sensor_msgs::image_encodings::TYPE_16UC1);
-  }
-*/
-  publishImg(depth_img, pcl_conversions::fromPCL(cloud_msg->header), depth_input_pub_);
+  publishImg(depth_img, pcl_conversions::fromPCL(cloud_in->header), depth_input_pub_);
 
   cv::Mat depth_img_inpainted = inpaintDepth(depth_img);
 
@@ -143,50 +128,23 @@ void Segmenter::segmentRgbdImage(const cv::Mat& color_img, const sensor_msgs::Ca
   assignEdgePoints(radius, max_distance, points3d, segmentation_img);
   assign_edge_points_timer.Stop();
 
-  ImageIndexList segment_centroids(static_cast<unsigned long>(num_labels));
-  for (size_t i = 0; i < static_cast<size_t>(num_labels); i++) {
-    segment_centroids[i] = ImageIndex(0, 0);
-  }
+  applyVoxelGridFilter(cloud_in, segmentation_img, cloud_out, segment_map);
 
-  int i = 0;
-  for (int col = normals_window_size_; col < depth_img.cols - normals_window_size_; ++col) {
-    for (int row = normals_window_size_; row < depth_img.rows - normals_window_size_; ++row) {
-      const pcl::PointXYZ& p = cloud_msg->at(col, row);
-
-      if (!std::isfinite(p.x) ||
-          !std::isfinite(p.y) ||
-          !std::isfinite(p.z)) {
-        continue;
-      }
-
-      ushort label = segmentation_img.at<ushort>(row-normals_window_size_, col-normals_window_size_);
-
-      if (label >= num_labels) {
-        ROS_INFO_STREAM("label: " << label << " index: " << i << " num labels: " << num_labels);
-        continue;
-      }
-
-      segment_map[label].emplace_back(i);
-      segment_centroids[label] += ImageIndex(row-normals_window_size_, col-normals_window_size_);
-
-      i++;
-    }
-  }
-
-  if (segmentation_pub_.getNumSubscribers() > 0) {
+ /* if (segmentation_pub_.getNumSubscribers() > 0) {
+    ImageIndexList segment_centroids = computeSegmentCentroids(segment_map, segmentation_img);
     cv::Mat segmentation_img_color = colorizeSegmentationImg(segmentation_img, segment_map);
     enumerateSegments(segment_map, segment_centroids, segmentation_img_color);
 
-    publishImg(segmentation_img_color, pcl_conversions::fromPCL(cloud_msg->header), segmentation_pub_);
-  }
+    publishImg(segmentation_img_color, pcl_conversions::fromPCL(cloud_in->header), segmentation_pub_);
+  }*/
 
-  publishImg(edge_img, pcl_conversions::fromPCL(cloud_msg->header), edge_img_pub_);
-  publishImg(edge_img_concave, pcl_conversions::fromPCL(cloud_msg->header), concave_edges_pub_);
-  publishImg(edge_img_depth_disc, pcl_conversions::fromPCL(cloud_msg->header), depth_disc_edges_pub_);
-  //publishImg(edge_img_color, pcl_conversions::fromPCL(cloud_msg->header), rgb_edges_pub_);
-  publishImg(depth_img_inpainted, pcl_conversions::fromPCL(cloud_msg->header), depth_inpainted_pub_);
-  publishImg(depth_img_smoothed, pcl_conversions::fromPCL(cloud_msg->header), depth_filtered_pub_);
-  publishNormalsImg(normals, pcl_conversions::fromPCL(cloud_msg->header), normals_pub_);
+  publishImg(edge_img, pcl_conversions::fromPCL(cloud_in->header), edge_img_pub_);
+  publishImg(edge_img_concave, pcl_conversions::fromPCL(cloud_in->header), concave_edges_pub_);
+  publishImg(edge_img_depth_disc, pcl_conversions::fromPCL(cloud_in->header), depth_disc_edges_pub_);
+  //publishImg(edge_img_color, pcl_conversions::fromPCL(cloud_in->header), rgb_edges_pub_);
+  publishImg(depth_img_inpainted, pcl_conversions::fromPCL(cloud_in->header), depth_inpainted_pub_);
+  publishImg(depth_img_smoothed, pcl_conversions::fromPCL(cloud_in->header), depth_filtered_pub_);
+  publishNormalsImg(normals, pcl_conversions::fromPCL(cloud_in->header), normals_pub_);
 }
 
 cv::Mat Segmenter::estimateNormals(const cv::Mat& points_3d, const cv::Matx33d& intrinsic_matrix) {
@@ -310,13 +268,13 @@ cv::Mat Segmenter::colorizeSegmentationImg(const cv::Mat& seg_img, const LabelIn
     colors.push_back(cv::Vec3b(c.b, c.g, c.r));
   }
 
-  cv::MatIterator_<cv::Vec3b> color_it = seg_img_color.begin<cv::Vec3b>();
-  cv::MatConstIterator_<ushort> gray_it = seg_img.begin<ushort>();
-  for(; color_it != seg_img_color.end<cv::Vec3b>() || gray_it != seg_img.end<ushort>(); ++color_it, ++gray_it )
+  cv::MatIterator_<cv::Vec3b> color_img_it = seg_img_color.begin<cv::Vec3b>();
+  cv::MatConstIterator_<ushort> seg_img_it = seg_img.begin<ushort>();
+  for(; color_img_it != seg_img_color.end<cv::Vec3b>() || seg_img_it != seg_img.end<ushort>(); ++color_img_it, ++seg_img_it )
   {
-      (*color_it)[0] = colors[(*gray_it)][0];
-      (*color_it)[1] = colors[(*gray_it)][1];
-      (*color_it)[2] = colors[(*gray_it)][2];
+      (*color_img_it)[0] = colors[(*seg_img_it)][0];
+      (*color_img_it)[1] = colors[(*seg_img_it)][1];
+      (*color_img_it)[2] = colors[(*seg_img_it)][2];
   }
 
   return seg_img_color;
@@ -641,7 +599,7 @@ void Segmenter::enumerateSegments(const LabelIndexMap& segment_map, const ImageI
 
     int num_pixel = static_cast<int>(segment.second.size());
 
-    if (num_pixel < 200)
+    if (num_pixel < 100)
       continue;
 
     const std::string text = std::to_string(segment_id);
@@ -649,19 +607,19 @@ void Segmenter::enumerateSegments(const LabelIndexMap& segment_map, const ImageI
     int baseline = 0;
     cv::Size text_size = cv::getTextSize(text, font, font_scale, font_thickness, &baseline);
 
-    int avg_row = segment_centroids[segment.first](0)/num_pixel;
-    int avg_col = segment_centroids[segment.first](1)/num_pixel;
+    int row = segment_centroids[segment.first](0);
+    int col = segment_centroids[segment.first](1);
 
     Color c = getSegmentColor(segment_id);
-    cv::Point p1(avg_col - text_size.width/2, avg_row + (3*text_size.height)/4);
-    cv::Point p2(avg_col + text_size.width/2, avg_row - (3*text_size.height)/4);
+    cv::Point p1(col - text_size.width/2, row + (3*text_size.height)/4);
+    cv::Point p2(col + text_size.width/2, row - (3*text_size.height)/4);
     cv::rectangle(img, p1, p2, cv::Scalar(255, 255, 255), CV_FILLED, 0);
 
     // offset the coordinates so that the text is inside the rectangle
-    avg_row += text_size.height / 2;
-    avg_col -= text_size.width / 2;
+    row += text_size.height / 2;
+    col -= text_size.width / 2;
 
-    cv::putText(img, std::to_string(segment_id), cv::Point(avg_col, avg_row),
+    cv::putText(img, std::to_string(segment_id), cv::Point(col, row),
                 font, font_scale, cvScalar(c.b, c.g, c.r), font_thickness);
   }
 }
@@ -714,5 +672,102 @@ ushort Segmenter::assignEdgePoint(int row, int col, int radius, double max_dista
   }
 
   return segment_id;
+}
+
+std::pair<ushort, int> getMostCommonLabel(const std::unordered_map<ushort, int>& x) {
+  using pairtype=std::pair<ushort, int>;
+  return *std::max_element(x.begin(), x.end(), [] (const pairtype& p1, const pairtype& p2) {
+        return p1.second < p2.second;
+  });
+}
+
+void Segmenter::applyVoxelGridFilter(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& cloud_in, const cv::Mat& segmentation_img, Pointcloud& cloud_out, LabelIndexMap& segment_map) {
+  Octree octree(static_cast<double>(voxel_size_));
+  octree.setInputCloud(cloud_in);
+  octree.addPointsFromInputCloud();
+
+  int width = static_cast<int>(cloud_in->width);
+  int height = static_cast<int>(cloud_in->height);
+
+  cloud_out.reserve(octree.getLeafCount());
+
+  Point point;
+  int num_points;
+  std::unordered_map<ushort, int> label_counts;
+
+  int index = 0;
+  for (auto leaf_it = octree.leaf_begin(); leaf_it != octree.leaf_end(); ++leaf_it) {
+    auto& leaf_container = leaf_it.getLeafContainer();
+    const auto& indices = leaf_container.getPointIndicesVector();
+
+    point = Point::Zero();
+    num_points = 0;
+    label_counts.clear();
+
+    for (int index: indices) {
+
+      const pcl::PointXYZ& point_pcl = cloud_in->points[static_cast<size_t>(index)];
+
+      int row = index / width;
+      int col = index % width;
+
+      if (row < normals_window_size_ || col < normals_window_size_ ||
+          row >= height - normals_window_size_ || col >= width - normals_window_size_) {
+        break;
+      }
+
+      ushort label = segmentation_img.at<ushort>(row-normals_window_size_, col-normals_window_size_);
+
+      // keep track of the labels and centroid of the points in this voxel
+      if (label_counts.count(label) == 0) {
+        label_counts[label] = 1;
+      } else {
+        label_counts[label]++;
+      }
+
+      point.x() += point_pcl.x;
+      point.y() += point_pcl.y;
+      point.z() += point_pcl.z;
+
+      num_points++;
+    }
+
+    if (num_points > 0) {
+      // add the centroid of the points in this cell
+      cloud_out.emplace_back(point/num_points);
+
+      // select the most common label as label for this cell
+      ushort label = getMostCommonLabel(label_counts).first;
+      segment_map[label].emplace_back(index);
+
+      index++;
+    }
+  }
+}
+
+ImageIndexList Segmenter::computeSegmentCentroids(const LabelIndexMap& segment_map, cv::Mat& segmentation_img) {
+  ImageIndexList segment_centroids(static_cast<unsigned long>(segment_map.size()));
+  std::vector<int> segment_sizes;
+  for (size_t i = 0; i < static_cast<size_t>(segment_map.size()); i++) {
+    segment_centroids[i] = ImageIndex(0, 0);
+    segment_sizes.push_back(0);
+  }
+
+  for (int col = 0; col < segmentation_img.cols; ++col) {
+    for (int row = 0; row < segmentation_img.rows; ++row) {
+
+      ushort label = segmentation_img.at<ushort>(row, col);
+
+      segment_centroids[label] += ImageIndex(row, col);
+      segment_sizes[label]++;
+    }
+  }
+
+  for (size_t i = 0; i < static_cast<size_t>(segment_map.size()); i++) {
+    segment_centroids[i].x() /= segment_sizes[i];
+    segment_centroids[i].y() /= segment_sizes[i];
+  }
+
+  return segment_centroids;
 }
 }  // namespace voxblox

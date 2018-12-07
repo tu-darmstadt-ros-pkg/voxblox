@@ -9,7 +9,7 @@ SegmentationServer::SegmentationServer(const ros::NodeHandle& nh,
 SegmentationServer::SegmentationServer(const ros::NodeHandle& nh,
                                        const ros::NodeHandle& nh_private,
                                        const SegmentedTsdfIntegrator::Config& seg_integrator_config)
-    : TsdfServer(nh, nh_private), segmenter_(nh_private), color_image_sub_(nh_, "color_image", 1), color_info_sub_(nh_, "color_camera_info", 1), depth_image_sub_(nh_, "depth_image", 1),
+    : TsdfServer(nh, nh_private), segmenter_(nh_private, tsdf_map_->voxel_size()), color_image_sub_(nh_, "color_image", 1), color_info_sub_(nh_, "color_camera_info", 1), depth_image_sub_(nh_, "depth_image", 1),
       depth_info_sub_(nh_, "depth_camera_info", 1), msg_sync_(RgbdSyncPolicy(10), color_image_sub_, depth_image_sub_, color_info_sub_, depth_info_sub_) {
   cache_mesh_ = true;
 
@@ -59,44 +59,20 @@ void SegmentationServer::updateMesh() {
 void SegmentationServer::integrateSegmentation(const sensor_msgs::PointCloud2ConstPtr& pointcloud, const cv::Mat& color_img, const cv::Mat& depth_img,
                                                const sensor_msgs::CameraInfoConstPtr& color_cam_info, const sensor_msgs::CameraInfoConstPtr& depth_cam_info) {
 
+  ROS_ERROR_STREAM("Seg TSDF server timestamp: " << pointcloud->header.stamp);
+
   pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_pcl(new pcl::PointCloud<pcl::PointXYZ>);
 
   pcl::fromROSMsg(*pointcloud, *cloud_pcl);
 
-  /*pcl::UniformSampling<pcl::PointXYZ> uniform_sampling;
-  uniform_sampling.setInputCloud(cloud_pcl);
-  uniform_sampling.setRadiusSearch(0.001);
-  uniform_sampling.compute(sub_cloud_indices);
-  std::cout << "Total points: " << cloud_pcl->points.size() << " Selected Points: " << sub_cloud_indices.points.size() << " "<< std::endl;
-*/
-
-  pcl::PointCloud<int> sub_cloud_indices;
-
   Pointcloud points_C;
-  points_C.reserve(cloud_pcl->points.size());
-
-  int normals_border_size = segmenter_.getNormalsWindowSize();
-  for (int col = normals_border_size; col < depth_img.cols - normals_border_size; ++col) {
-    for (int row = normals_border_size; row < depth_img.rows - normals_border_size; ++row) {
-
-      const pcl::PointXYZ& p = cloud_pcl->at(col, row);
-
-      if (!std::isfinite(p.x) ||
-          !std::isfinite(p.y) ||
-          !std::isfinite(p.z)) {
-        continue;
-      }
-
-      points_C.push_back(Point(p.x, p.y, p.z));
-    }
-  }
-
   LabelIndexMap segment_map;
-  segmenter_.segmentRgbdImage(color_img, color_cam_info, depth_img, depth_cam_info, cloud_pcl, sub_cloud_indices, segment_map);
+  segmenter_.segmentRgbdImage(color_img, color_cam_info, depth_img, depth_cam_info, cloud_pcl, points_C, segment_map);
 
   std::cout << "points size: " << points_C.size() << std::endl;
 
   timing::Timer seg_integrate_timer("seg_integrate_segmentation");
+
   seg_tsdf_integrator_->integrateSegmentedPointCloud(T_G_C_current_, points_C, segment_map, segmenter_.getColorMap());
   seg_integrate_timer.Stop();
 
