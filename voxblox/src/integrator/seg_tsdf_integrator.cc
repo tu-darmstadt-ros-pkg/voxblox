@@ -113,10 +113,12 @@ void SegmentedTsdfIntegrator::integrateSegmentedPointCloud(const Transformation&
 
   seg_get_visible_voxels_timer.Stop();
 
-  std::cout << "visible voxels size: " << visible_voxels_.size() << std::endl;
+  int vis_voxel_size = 0;
+  for (auto item : visible_voxels_)
+    vis_voxel_size += item.second.size();
+  std::cout << "visible voxels size: " << vis_voxel_size << std::endl;
 
   int seg_map_size = 0;
-
   for (auto item : segment_map_)
     seg_map_size += item.second.size();
   std::cout << "segment map size: " << seg_map_size << std::endl;
@@ -310,15 +312,12 @@ void SegmentedTsdfIntegrator::getVisibleVoxels(const Transformation& T_G_C,
       continue;
     }
 
-    visible_voxels_[i].emplace_back(global_voxel_idx);
     segment_map_[voxel->segment_id].emplace_back(i);
     segment_blocks_map_[voxel->segment_id].emplace(block_idx);
 
-    // Now check the surrounding voxels along the bearing vector. If they have
-    // never been observed, then fill in their value. Otherwise don't.
+    // Also include the surrounding voxels along the ray away
     Point close_voxel = surface_intersection;
-    for (int voxel_offset = -config_.voxel_prop_radius;
-         voxel_offset <= config_.voxel_prop_radius; voxel_offset++) {
+    for (int voxel_offset = 0; voxel_offset <= config_.voxel_prop_radius; voxel_offset++) {
       close_voxel =
           surface_intersection + direction * voxel_offset * voxel_size_;
 
@@ -330,7 +329,7 @@ void SegmentedTsdfIntegrator::getVisibleVoxels(const Transformation& T_G_C,
 
       if (close_voxel == nullptr)
       {
-        //std::cout << "[getVisibleVoxels] could not find voxel " << close_global_voxel_idx.transpose() << std::endl;
+        //std::cout << "[getVisibleVoxels] could not find close voxel " << close_global_voxel_idx.transpose() << " for voxel " << global_voxel_idx.transpose() << std::endl;
         continue;
       }
 
@@ -342,7 +341,7 @@ void SegmentedTsdfIntegrator::getVisibleVoxels(const Transformation& T_G_C,
 
 LabelIndexMap SegmentedTsdfIntegrator::propagateSegmentLabels(LabelIndexMap& segment_map) {
   LabelIndexMap propagated_labels;
-  Label best_overlap_id;
+  Label best_overlap_id = 0;
 
   for (auto& img_segmentation: segment_map) {
 
@@ -383,7 +382,7 @@ LabelIndexMap SegmentedTsdfIntegrator::propagateSegmentLabels(LabelIndexMap& seg
       prop_idxs.insert(prop_idxs.end(), glob_idxs.begin(), glob_idxs.end());
 
     } else {
-      Labels& prop_idxs  = propagated_labels[max_label_++];
+      Labels& prop_idxs = propagated_labels[++max_label_];
       const Labels& img_idxs = img_segmentation.second;
 
       prop_idxs.insert(prop_idxs.end(), img_idxs.begin(), img_idxs.end());
