@@ -209,17 +209,10 @@ void SegmentationServer::rgbdCallback(const sensor_msgs::ImageConstPtr& color_im
   sensor_msgs::CameraInfoPtr depth_cam_info = downsampleCameraInfo(depth_cam_info_msg, downsampling_factor);
 
   sensor_msgs::PointCloud2::Ptr cloud_msg = boost::make_shared<sensor_msgs::PointCloud2>();
-  pcl::PointCloud<pcl::PointXYZRGB> cloud(depth_img_downsampled.cols, depth_img_downsampled.rows);
+  pcl::PointCloud<pcl::PointXYZRGB> cloud(static_cast<uint>(depth_img_downsampled.cols),
+                                          static_cast<uint>(depth_img_downsampled.rows));
 
-  if (depth_img_msg->encoding == "32FC1") {
-    convertToCloud<float>(depth_img_downsampled, color_img_downsampled, depth_cam_info, cloud);
-  }
-  else if (depth_img_msg->encoding == "16UC1") {
-    convertToCloud<uint16_t>(depth_img_downsampled, color_img_downsampled, depth_cam_info, cloud);
-  }
-  else {
-    ROS_ERROR("unsupported depth image encoding: %s", depth_img_msg->encoding.c_str());
-  }
+  convertToCloud<uint16_t>(depth_img_downsampled, color_img_downsampled, depth_cam_info, cloud);
 
   pcl::toROSMsg(cloud, *cloud_msg);
   cloud_msg->header = depth_img_msg->header;
