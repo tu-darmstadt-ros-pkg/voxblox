@@ -42,6 +42,7 @@ class SegmentationServer : public TsdfServer {
   virtual void updateMesh();
   virtual void publishPointclouds();
   virtual void newPoseCallback(const Transformation& T_G_C);
+  virtual void clear();
 
   void rgbdCallback(const sensor_msgs::ImageConstPtr& color_img, const sensor_msgs::ImageConstPtr& depth_img,
                     const sensor_msgs::CameraInfoConstPtr& color_cam_info, const sensor_msgs::CameraInfoConstPtr& depth_cam_info);

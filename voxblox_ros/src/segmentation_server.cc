@@ -316,4 +316,9 @@ template<>
 bool SegmentationServer::isDepthValid(uint16_t depth) {
   return depth != 0;
 }
+
+void SegmentationServer::clear() {
+  seg_tsdf_map_->getTsdfLayerPtr()->removeAllBlocks();
+  TsdfServer::clear();
+}
 }  // namespace voxblox
