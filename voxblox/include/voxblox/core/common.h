@@ -64,16 +64,21 @@ typedef AlignedVector<ImageIndex> ImageIndexList;
 typedef AlignedVector<LongIndex> LongIndexVector;
 typedef LongIndexVector GlobalIndexVector;
 
+/**
+ * Performs deco hashing on block indexes. Based on recommendations of
+ * "Investigating the impact of Suboptimal Hashing Functions" by L. Buckley et
+ * al.
+ */
 struct IndexHash {
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
-  static constexpr size_t prime1 = 73856093;
-  static constexpr size_t prime2 = 19349663;
-  static constexpr size_t prime3 = 83492791;
+  /// number was arbitrarily chosen with no good justification
+  static constexpr size_t sl = 17191;
+  static constexpr size_t sl2 = sl * sl;
 
   std::size_t operator()(const AnyIndex& index) const {
-    return (static_cast<unsigned int>(index.x()) * prime1 ^ index.y() * prime2 ^
-            index.z() * prime3);
+    return static_cast<unsigned int>(index.x() + index.y() * sl +
+                                       index.z() * sl2);
   }
 };
 
