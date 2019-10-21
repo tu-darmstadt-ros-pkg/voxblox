@@ -66,7 +66,12 @@ class TsdfIntegratorBase {
     bool use_weight_dropoff = true;
     bool use_sparsity_compensation_factor = false;
     float sparsity_compensation_factor = 1.0f;
+
     size_t integrator_threads = std::thread::hardware_concurrency();
+
+    /// Mode of the ThreadSafeIndex, determines the integration order of the
+    /// rays. Options: "mixed", "sorted"
+    std::string integration_order_mode = "mixed";
 
     /// merge integrator specific
     bool enable_anti_grazing = false;
@@ -79,6 +84,8 @@ class TsdfIntegratorBase {
     int clear_checks_every_n_frames = 1;
     /// fast integrator specific
     float max_integration_time_s = std::numeric_limits<float>::max();
+
+    std::string print() const;
   };
 
   TsdfIntegratorBase(const Config& config, Layer<TsdfVoxel>* layer);
@@ -103,7 +110,23 @@ class TsdfIntegratorBase {
  protected:
   /// Thread safe.
   inline bool isPointValid(const Point& point_C, const bool freespace_point,
-                           bool* is_clearing) const;
+                    bool* is_clearing) const {
+    DCHECK(is_clearing != nullptr);
+    const FloatingPoint ray_distance = point_C.norm();
+    if (ray_distance < config_.min_ray_length_m) {
+      return false;
+    } else if (ray_distance > config_.max_ray_length_m) {
+      if (config_.allow_clear || freespace_point) {
+        *is_clearing = true;
+        return true;
+      } else {
+        return false;
+      }
+    } else {
+      *is_clearing = freespace_point;
+      return true;
+    }
+  }
 
   /**
    * Will return a pointer to a voxel located at global_voxel_idx in the tsdf
