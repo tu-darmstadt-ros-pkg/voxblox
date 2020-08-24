@@ -10,20 +10,24 @@ EsdfServer::EsdfServer(const ros::NodeHandle& nh,
     : EsdfServer(nh, nh_private, getEsdfMapConfigFromRosParam(nh_private),
                  getEsdfIntegratorConfigFromRosParam(nh_private),
                  getTsdfMapConfigFromRosParam(nh_private),
-                 getTsdfIntegratorConfigFromRosParam(nh_private)) {}
+                 getTsdfIntegratorConfigFromRosParam(nh_private),
+                 getMeshIntegratorConfigFromRosParam(nh_private)) {}
 
 EsdfServer::EsdfServer(const ros::NodeHandle& nh,
                        const ros::NodeHandle& nh_private,
                        const EsdfMap::Config& esdf_config,
                        const EsdfIntegrator::Config& esdf_integrator_config,
                        const TsdfMap::Config& tsdf_config,
-                       const TsdfIntegratorBase::Config& tsdf_integrator_config)
-    : TsdfServer(nh, nh_private, tsdf_config, tsdf_integrator_config),
+                       const TsdfIntegratorBase::Config& tsdf_integrator_config,
+                       const MeshIntegratorConfig& mesh_config)
+    : TsdfServer(nh, nh_private, tsdf_config, tsdf_integrator_config,
+                 mesh_config),
       clear_sphere_for_planning_(false),
       publish_esdf_map_(false),
       publish_traversable_(false),
       traversability_radius_(1.0),
-      incremental_update_(true) {
+      incremental_update_(true),
+      num_subscribers_esdf_map_(0) {
   // Set up map and integrator.
   esdf_map_.reset(new EsdfMap(esdf_config));
   esdf_integrator_.reset(new EsdfIntegrator(esdf_integrator_config,
@@ -62,6 +66,16 @@ void EsdfServer::setupRos() {
                     publish_traversable_);
   nh_private_.param("traversability_radius", traversability_radius_,
                     traversability_radius_);
+
+  double update_esdf_every_n_sec = 1.0;
+  nh_private_.param("update_esdf_every_n_sec", update_esdf_every_n_sec,
+                    update_esdf_every_n_sec);
+
+  if (update_esdf_every_n_sec > 0.0) {
+    update_esdf_timer_ =
+        nh_private_.createTimer(ros::Duration(update_esdf_every_n_sec),
+                                &EsdfServer::updateEsdfEvent, this);
+  }
 }
 
 void EsdfServer::publishAllUpdatedEsdfVoxels() {
@@ -102,24 +116,8 @@ bool EsdfServer::generateEsdfCallback(
   return true;
 }
 
-void EsdfServer::updateMesh() {
-  // Also update the ESDF now, if there's any blocks in the TSDF.
-  if (incremental_update_ &&
-      tsdf_map_->getTsdfLayer().getNumberOfAllocatedBlocks() > 0) {
-    const bool clear_updated_flag_esdf = false;
-    esdf_integrator_->updateFromTsdfLayer(clear_updated_flag_esdf);
-  }
-  if (publish_pointclouds_) {
-    publishAllUpdatedEsdfVoxels();
-  }
-  if (publish_traversable_) {
-    publishTraversable();
-  }
-  if (publish_esdf_map_) {
-    publishMap();
-  }
-
-  TsdfServer::updateMesh();
+void EsdfServer::updateEsdfEvent(const ros::TimerEvent& /*event*/) {
+  updateEsdf();
 }
 
 void EsdfServer::publishPointclouds() {
@@ -143,9 +141,20 @@ void EsdfServer::publishTraversable() {
   traversable_pub_.publish(pointcloud);
 }
 
-void EsdfServer::publishMap(const bool reset_remote_map) {
-  if (this->esdf_map_pub_.getNumSubscribers() > 0) {
-    const bool only_updated = false;
+void EsdfServer::publishMap(bool reset_remote_map) {
+  if (!publish_esdf_map_) {
+    return;
+  }
+
+  int subscribers = this->esdf_map_pub_.getNumSubscribers();
+  if (subscribers > 0) {
+    if (num_subscribers_esdf_map_ < subscribers) {
+      // Always reset the remote map and send all when a new subscriber
+      // subscribes. A bit of overhead for other subscribers, but better than
+      // inconsistent map states.
+      reset_remote_map = true;
+    }
+    const bool only_updated = !reset_remote_map;
     timing::Timer publish_map_timer("map/publish_esdf");
     voxblox_msgs::Layer layer_msg;
     serializeLayerAsMsg<EsdfVoxel>(this->esdf_map_->getEsdfLayer(),
@@ -156,7 +165,7 @@ void EsdfServer::publishMap(const bool reset_remote_map) {
     this->esdf_map_pub_.publish(layer_msg);
     publish_map_timer.Stop();
   }
-
+  num_subscribers_esdf_map_ = subscribers;
   TsdfServer::publishMap();
 }
 
@@ -222,6 +231,8 @@ void EsdfServer::newPoseCallback(const Transformation& T_G_C) {
 }
 
 void EsdfServer::esdfMapCallback(const voxblox_msgs::Layer& layer_msg) {
+  timing::Timer receive_map_timer("map/receive_esdf");
+
   bool success =
       deserializeMsgToLayer<EsdfVoxel>(layer_msg, esdf_map_->getEsdfLayerPtr());
 

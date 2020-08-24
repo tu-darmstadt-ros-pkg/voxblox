@@ -51,6 +51,26 @@ enum ColorMode {
   kSegmentation
 };
 
+inline ColorMode getColorModeFromString(const std::string& color_mode_string) {
+  if (color_mode_string.empty()) {
+    return ColorMode::kColor;
+  } else {
+    if (color_mode_string == "color" || color_mode_string == "colors") {
+      return ColorMode::kColor;
+    } else if (color_mode_string == "height") {
+      return ColorMode::kHeight;
+    } else if (color_mode_string == "normals") {
+      return ColorMode::kNormals;
+    } else if (color_mode_string == "lambert") {
+      return ColorMode::kLambert;
+    } else if (color_mode_string == "lambert_color") {
+      return ColorMode::kLambertColor;
+    } else {  // Default case is gray.
+      return ColorMode::kGray;
+    }
+  }
+}
+
 inline Point lambertShading(const Point& normal, const Point& light,
                             const Point& color) {
   return std::max<FloatingPoint>(normal.dot(light), 0.0f) * color;
@@ -136,10 +156,11 @@ inline std_msgs::ColorRGBA getVertexColor(const Mesh::ConstPtr& mesh,
   return color_msg;
 }
 
-inline void generateVoxbloxMeshMsg(const MeshLayer::Ptr& mesh_layer,
-                                   ColorMode color_mode,
+inline void generateVoxbloxMeshMsg(MeshLayer* mesh_layer, ColorMode color_mode,
                                    voxblox_msgs::Mesh* mesh_msg) {
   CHECK_NOTNULL(mesh_msg);
+  CHECK_NOTNULL(mesh_layer);
+
   mesh_msg->header.stamp = ros::Time::now();
 
   BlockIndexList mesh_indices;
@@ -212,6 +233,14 @@ inline void generateVoxbloxMeshMsg(const MeshLayer::Ptr& mesh_layer,
 
     mesh->updated = false;
   }
+}
+
+inline void generateVoxbloxMeshMsg(const MeshLayer::Ptr& mesh_layer,
+                                   ColorMode color_mode,
+                                   voxblox_msgs::Mesh* mesh_msg) {
+  CHECK_NOTNULL(mesh_msg);
+  CHECK(mesh_layer);
+  generateVoxbloxMeshMsg(mesh_layer.get(), color_mode, mesh_msg);
 }
 
 inline void fillMarkerWithMesh(const MeshLayer::ConstPtr& mesh_layer,

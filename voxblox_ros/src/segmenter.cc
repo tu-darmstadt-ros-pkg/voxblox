@@ -613,7 +613,7 @@ void Segmenter::enumerateSegments(const LabelIndexMap& segment_map, const ImageI
     Color c = getSegmentColor(segment_id);
     cv::Point p1(col - text_size.width/2, row + (3*text_size.height)/4);
     cv::Point p2(col + text_size.width/2, row - (3*text_size.height)/4);
-    cv::rectangle(img, p1, p2, cv::Scalar(255, 255, 255), CV_FILLED, 0);
+    cv::rectangle(img, p1, p2, cv::Scalar(255, 255, 255), cv::FILLED, 0);
 
     // offset the coordinates so that the text is inside the rectangle
     row += text_size.height / 2;
