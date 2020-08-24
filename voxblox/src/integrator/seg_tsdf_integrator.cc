@@ -97,14 +97,15 @@ void SegmentedTsdfIntegrator::integrateSegmentedPointCloud(const Transformation&
   segment_map_.clear();
   updated_segments_.clear();
 
-  ThreadSafeIndex index_getter(points_C.size());
+  std::unique_ptr<ThreadSafeIndex> index_getter(
+    ThreadSafeIndexFactory::get("mixed", points_C));
 
   std::list<std::thread> integration_threads;
 
   for (size_t i = 0; i < config_.integrator_threads; ++i) {
     integration_threads.emplace_back(&SegmentedTsdfIntegrator::getVisibleVoxels,
                                      this, T_G_C, points_C,
-                                     &index_getter);
+                                     index_getter.get());
   }
 
   for (std::thread& thread : integration_threads) {
