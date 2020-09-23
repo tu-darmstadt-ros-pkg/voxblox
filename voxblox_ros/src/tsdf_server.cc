@@ -633,9 +633,6 @@ bool TsdfServer::publishTsdfMapCallback(std_srvs::Empty::Request& /*request*/,
 bool TsdfServer::getTsdfMapCallback(voxblox_msgs::GetLayer::Request& request, voxblox_msgs::GetLayer::Response& response)
 {
   bool only_updated = false;
-  if (request.action == voxblox_msgs::Layer::ACTION_UPDATE) {
-    only_updated = true;
-  }
   serializeLayerAsMsg<TsdfVoxel>(this->tsdf_map_->getTsdfLayer(), only_updated,
                                  &response.layer);
   return true;
