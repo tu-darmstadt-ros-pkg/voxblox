@@ -4,7 +4,11 @@ project(voxblox_ros)
 find_package(catkin_simple REQUIRED)
 catkin_simple(ALL_DEPS_REQUIRED)
 
-add_definitions(-std=c++11 -Wall -Wextra)
+add_definitions(-Wall -Wextra)
+
+# Set target C++ standard and required compiler features
+set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 #############
 # LIBRARIES #
