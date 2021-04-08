@@ -63,7 +63,7 @@ void printMinMax(cv::Mat& mat, const std::string& mat_name) {
   ROS_INFO_STREAM(mat_name << " min: " << min << " max: " << max);
 }
 
-void Segmenter::segmentRgbdImage(const cv::Mat& color_img, const sensor_msgs::CameraInfoConstPtr& /*color_cam_info_msg*/,
+void Segmenter::segmentRgbdImage(const cv::Mat& color_img, const sensor_msgs::CameraInfoConstPtr& color_cam_info_msg,
                                  const cv::Mat& depth_img, const sensor_msgs::CameraInfoConstPtr& depth_cam_info_msg,
                                  const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& cloud_in, Pointcloud& cloud_out, LabelIndexMap& segment_map)
  {

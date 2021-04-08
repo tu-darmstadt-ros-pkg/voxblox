@@ -51,6 +51,19 @@ struct SegmentedVoxel {
   LabelConfidence confidence = 0;
 };
 
+struct LabelVoxel {
+  int label_id = 0;
+  double weight = -1.0;
+  //TODO add some sort of tracking here
+
+};
+
+struct MultiLabelVoxel {
+  std::unordered_map<int, float> weights;
+  int label_id = 0;
+  double weight = -1.0;
+};
+
 // Used for serialization only.
 namespace voxel_types {
 const std::string kNotSerializable = "not_serializable";

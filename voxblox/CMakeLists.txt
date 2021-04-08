@@ -4,6 +4,13 @@ project(voxblox)
 find_package(catkin_simple REQUIRED)
 catkin_simple()
 
+find_package(OpenCV REQUIRED)
+include_directories(${OpenCV_INCLUDE_DIRS}) #Added because of new integrator, maybe move stuff to different file /move integrator?
+find_package(PCL 1.3 REQUIRED COMPONENTS common io visualization)
+include_directories(${PCL_INCLUDE_DIRS})
+link_directories(${PCL_LIBRARY_DIRS}) 
+add_definitions(${PCL_DEFINITIONS}) #end added
+
 set(CMAKE_MACOSX_RPATH 0)
 add_definitions(-std=c++11 -Wall -Wextra)
 
@@ -64,7 +71,13 @@ set("${PROJECT_NAME}_SRCS"
   src/utils/timing.cc
   src/utils/voxel_utils.cc
   src/utils/segment_tools.cc
+  
+  src/integrator/mrcnn_tsdf_integrator.cc
+  src/integrator/tsdf_seq_integrator.cc
+  src/integrator/SegTsdfIntegrator.cc
 )
+
+
 
 #############
 # LIBRARIES #
@@ -86,7 +99,7 @@ target_link_libraries(${PROJECT_NAME}_proto ${PROTOBUF_LIBRARIES})
 cs_add_library(${PROJECT_NAME}
   ${${PROJECT_NAME}_SRCS}
 )
-target_link_libraries(${PROJECT_NAME} ${PROJECT_NAME}_proto ${PROTOBUF_LIBRARIES})
+target_link_libraries(${PROJECT_NAME} ${PROJECT_NAME}_proto ${PROTOBUF_LIBRARIES} ${OpenCV_LIBRARIES} ${PCL_LIBRARIES}) #adding pcl and opencv
 
 ############
 # BINARIES #

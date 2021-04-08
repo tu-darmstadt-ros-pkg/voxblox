@@ -260,6 +260,19 @@ inline bool visualizeIntensityVoxels(const IntensityVoxel& voxel,
   return false;
 }
 
+//as above
+inline bool visualizeLabelVoxels(const LabelVoxel& voxel,
+                                     const Point& /*coord*/,
+                                     double* label) {
+  CHECK_NOTNULL(label);
+  if (voxel.weight > 0.0) {
+    *label = voxel.label_id;
+    return true;
+  }
+  return false;
+}
+
+
 inline bool visualizeDistanceIntensityEsdfVoxelsSlice(
     const EsdfVoxel& voxel, const Point& coord, unsigned int free_plane_index,
     FloatingPoint free_plane_val, FloatingPoint voxel_size, double* intensity) {

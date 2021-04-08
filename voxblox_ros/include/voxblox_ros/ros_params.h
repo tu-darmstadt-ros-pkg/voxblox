@@ -9,6 +9,7 @@
 #include <voxblox/integrator/esdf_integrator.h>
 #include <voxblox/integrator/tsdf_integrator.h>
 #include <voxblox/integrator/seg_tsdf_integrator.h>
+#include <voxblox/integrator/mrcnn_tsdf_integrator.h>
 
 namespace voxblox {
 
@@ -106,6 +107,46 @@ inline TsdfIntegratorBase::Config getTsdfIntegratorConfigFromRosParam(
 inline SegmentedTsdfIntegrator::Config getSegTsdfIntegratorConfigFromRosParam(
     const ros::NodeHandle& nh_private) {
   SegmentedTsdfIntegrator::Config integrator_config;
+
+  nh_private.param("max_ray_length_m", integrator_config.max_ray_length_m,
+                   integrator_config.max_ray_length_m);
+  nh_private.param("min_ray_length_m", integrator_config.min_ray_length_m,
+                   integrator_config.min_ray_length_m);
+  nh_private.param("min_segment_overlap",
+                   integrator_config.min_segment_overlap,
+                   integrator_config.min_segment_overlap);
+  nh_private.param("min_segment_merge_overlap",
+                   integrator_config.min_segment_merge_overlap,
+                   integrator_config.min_segment_merge_overlap);
+  nh_private.param("seg_voxel_prop_radius",
+                   integrator_config.voxel_prop_radius,
+                   integrator_config.voxel_prop_radius);
+  nh_private.param("write_debug_data",
+                   integrator_config.write_debug_data_,
+                   integrator_config.write_debug_data_);
+
+  int min_segment_pixel_size = static_cast<int>(integrator_config.min_segment_pixel_size);
+  int min_merge_confidence = static_cast<int>(integrator_config.min_merge_confidence);
+
+  nh_private.param("min_segment_pixel_size",
+                   min_segment_pixel_size,
+                   min_segment_pixel_size);
+  nh_private.param("min_merge_confidence",
+                   min_merge_confidence,
+                   min_merge_confidence);
+
+  if (min_segment_pixel_size >= 0)
+    integrator_config.min_segment_pixel_size = static_cast<size_t>(min_segment_pixel_size);
+
+  if (min_merge_confidence >= 0)
+    integrator_config.min_merge_confidence = static_cast<LabelConfidence>(min_merge_confidence);
+
+  return integrator_config;
+}
+
+inline MrcnnTsdfIntegrator::Config getMrcnnIntegratorConfigFromRosParam(
+    const ros::NodeHandle& nh_private) {
+  MrcnnTsdfIntegrator::Config integrator_config;
 
   nh_private.param("max_ray_length_m", integrator_config.max_ray_length_m,
                    integrator_config.max_ray_length_m);
