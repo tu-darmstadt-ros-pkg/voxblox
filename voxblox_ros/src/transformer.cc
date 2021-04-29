@@ -106,7 +106,7 @@ bool Transformer::lookupTransformTf(const std::string& from_frame,
   }
 
   try {
-    tf_listener_.lookupTransform(to_frame, from_frame_modified, time_to_lookup,
+    tf_listener_.lookupTransform(to_frame, from_frame_modified, timestamp,
                                  tf_transform);
   } catch (tf::TransformException& ex) {  // NOLINT
     ROS_ERROR_STREAM(

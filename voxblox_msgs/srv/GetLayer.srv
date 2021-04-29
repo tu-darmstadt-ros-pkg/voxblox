@@ -1,0 +1,7 @@
+uint8 action
+---
+voxblox_msgs/Layer layer
+
+# Action definitions
+uint8 ACTION_FULL_MAP = 0
+uint8 ACTION_UPDATE = 1

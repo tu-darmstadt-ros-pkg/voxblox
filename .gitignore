@@ -48,6 +48,8 @@ mesh_results
 # Tools
 autolintc
 
+#QtCreator
+CMakeLists.txt.user
 # Documentation
 docs/_build
 docs/doxyoutput
