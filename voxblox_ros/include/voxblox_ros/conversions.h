@@ -15,6 +15,8 @@
 #include <voxblox/utils/color_maps.h>
 #include <voxblox_msgs/Layer.h>
 
+#include "voxblox_ros/dynamic_mapping/common.h"
+
 namespace voxblox {
 
 enum class MapDerializationAction : uint8_t {
@@ -107,6 +109,18 @@ Color convertColor(const PCLPoint& point,
 
 template <>
 inline Color convertColor(const pcl::PointXYZRGB& point,
+                          const std::shared_ptr<ColorMap>& /*color_map*/) {
+  return Color(point.r, point.g, point.b, point.a);
+}
+
+template <>
+inline Color convertColor(const InputPointType& point,
+                          const std::shared_ptr<ColorMap>& /*color_map*/) {
+  return Color(point.r, point.g, point.b, point.a);
+}
+
+template <>
+inline Color convertColor(const pcl::PointXYZRGBNormal& point,
                           const std::shared_ptr<ColorMap>& /*color_map*/) {
   return Color(point.r, point.g, point.b, point.a);
 }

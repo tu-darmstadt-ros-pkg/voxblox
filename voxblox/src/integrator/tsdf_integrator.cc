@@ -242,7 +242,8 @@ float TsdfIntegratorBase::getVoxelWeight(const Point& point_C) const {
 void SimpleTsdfIntegrator::integratePointCloud(const Transformation& T_G_C,
                                                const Pointcloud& points_C,
                                                const Colors& colors,
-                                               const bool freespace_points) {
+                                               const bool freespace_points,
+                                               const Transformation& T_O) {
   timing::Timer integrate_timer("integrate/simple");
   CHECK_EQ(points_C.size(), colors.size());
 
@@ -252,7 +253,7 @@ void SimpleTsdfIntegrator::integratePointCloud(const Transformation& T_G_C,
   std::list<std::thread> integration_threads;
   for (size_t i = 0; i < config_.integrator_threads; ++i) {
     integration_threads.emplace_back(&SimpleTsdfIntegrator::integrateFunction,
-                                     this, T_G_C, points_C, colors,
+                                     this, T_G_C, T_O, points_C, colors,
                                      freespace_points, index_getter.get());
   }
 
@@ -267,6 +268,7 @@ void SimpleTsdfIntegrator::integratePointCloud(const Transformation& T_G_C,
 }
 
 void SimpleTsdfIntegrator::integrateFunction(const Transformation& T_G_C,
+                                             const Transformation& T_O,
                                              const Pointcloud& points_C,
                                              const Colors& colors,
                                              const bool freespace_points,
@@ -307,7 +309,8 @@ void SimpleTsdfIntegrator::integrateFunction(const Transformation& T_G_C,
 void MergedTsdfIntegrator::integratePointCloud(const Transformation& T_G_C,
                                                const Pointcloud& points_C,
                                                const Colors& colors,
-                                               const bool freespace_points) {
+                                               const bool freespace_points,
+                                               const Transformation& T_O) {
   timing::Timer integrate_timer("integrate/merged");
   CHECK_EQ(points_C.size(), colors.size());
 
@@ -324,12 +327,12 @@ void MergedTsdfIntegrator::integratePointCloud(const Transformation& T_G_C,
   bundleRays(T_G_C, points_C, freespace_points, index_getter.get(), &voxel_map,
              &clear_map);
 
-  integrateRays(T_G_C, points_C, colors, config_.enable_anti_grazing, false,
+  integrateRays(T_G_C, T_O, points_C, colors, config_.enable_anti_grazing, false,
                 voxel_map, clear_map);
 
   timing::Timer clear_timer("integrate/clear");
 
-  integrateRays(T_G_C, points_C, colors, config_.enable_anti_grazing, true,
+  integrateRays(T_G_C, T_O, points_C, colors, config_.enable_anti_grazing, true,
                 voxel_map, clear_map);
 
   clear_timer.Stop();
@@ -371,7 +374,7 @@ void MergedTsdfIntegrator::bundleRays(
 }
 
 void MergedTsdfIntegrator::integrateVoxel(
-    const Transformation& T_G_C, const Pointcloud& points_C,
+    const Transformation& T_G_C, const Transformation& T_O, const Pointcloud& points_C,
     const Colors& colors, bool enable_anti_grazing, bool clearing_ray,
     const std::pair<GlobalIndex, AlignedVector<size_t>>& kv,
     const LongIndexHashMapType<AlignedVector<size_t>>::type& voxel_map) {
@@ -379,7 +382,7 @@ void MergedTsdfIntegrator::integrateVoxel(
     return;
   }
 
-  const Point& origin = T_G_C.getPosition();
+  const Point& origin = T_O * T_G_C.getPosition();
   Color merged_color;
   Point merged_point_C = Point::Zero();
   FloatingPoint merged_weight = 0.0;
@@ -432,7 +435,7 @@ void MergedTsdfIntegrator::integrateVoxel(
 }
 
 void MergedTsdfIntegrator::integrateVoxels(
-    const Transformation& T_G_C, const Pointcloud& points_C,
+    const Transformation& T_G_C, const Transformation& T_O, const Pointcloud& points_C,
     const Colors& colors, bool enable_anti_grazing, bool clearing_ray,
     const LongIndexHashMapType<AlignedVector<size_t>>::type& voxel_map,
     const LongIndexHashMapType<AlignedVector<size_t>>::type& clear_map,
@@ -449,7 +452,7 @@ void MergedTsdfIntegrator::integrateVoxels(
 
   for (size_t i = 0; i < map_size; ++i) {
     if (((i + thread_idx + 1) % config_.integrator_threads) == 0) {
-      integrateVoxel(T_G_C, points_C, colors, enable_anti_grazing, clearing_ray,
+      integrateVoxel(T_G_C, T_O, points_C, colors, enable_anti_grazing, clearing_ray,
                      *it, voxel_map);
     }
     ++it;
@@ -457,20 +460,20 @@ void MergedTsdfIntegrator::integrateVoxels(
 }
 
 void MergedTsdfIntegrator::integrateRays(
-    const Transformation& T_G_C, const Pointcloud& points_C,
+    const Transformation& T_G_C, const Transformation& T_O, const Pointcloud& points_C,
     const Colors& colors, bool enable_anti_grazing, bool clearing_ray,
     const LongIndexHashMapType<AlignedVector<size_t>>::type& voxel_map,
     const LongIndexHashMapType<AlignedVector<size_t>>::type& clear_map) {
   // if only 1 thread just do function call, otherwise spawn threads
   if (config_.integrator_threads == 1) {
     constexpr size_t thread_idx = 0;
-    integrateVoxels(T_G_C, points_C, colors, enable_anti_grazing, clearing_ray,
+    integrateVoxels(T_G_C, T_O, points_C, colors, enable_anti_grazing, clearing_ray,
                     voxel_map, clear_map, thread_idx);
   } else {
     std::list<std::thread> integration_threads;
     for (size_t i = 0; i < config_.integrator_threads; ++i) {
       integration_threads.emplace_back(
-          &MergedTsdfIntegrator::integrateVoxels, this, T_G_C, points_C, colors,
+          &MergedTsdfIntegrator::integrateVoxels, this, T_G_C, T_O, points_C, colors,
           enable_anti_grazing, clearing_ray, voxel_map, clear_map, i);
     }
 
@@ -486,6 +489,7 @@ void MergedTsdfIntegrator::integrateRays(
 }
 
 void FastTsdfIntegrator::integrateFunction(const Transformation& T_G_C,
+                                           const Transformation& T_O,
                                            const Pointcloud& points_C,
                                            const Colors& colors,
                                            const bool freespace_points,
@@ -504,7 +508,7 @@ void FastTsdfIntegrator::integrateFunction(const Transformation& T_G_C,
       continue;
     }
 
-    const Point origin = T_G_C.getPosition();
+    const Point origin = T_O * T_G_C.getPosition();
     const Point point_G = T_G_C * point_C;
     // Checks to see if another ray in this scan has already started 'close'
     // to this location. If it has then we skip ray casting this point. We
@@ -555,7 +559,8 @@ void FastTsdfIntegrator::integrateFunction(const Transformation& T_G_C,
 void FastTsdfIntegrator::integratePointCloud(const Transformation& T_G_C,
                                              const Pointcloud& points_C,
                                              const Colors& colors,
-                                             const bool freespace_points) {
+                                             const bool freespace_points,
+                                             const Transformation& T_O) {
   timing::Timer integrate_timer("integrate/fast");
   CHECK_EQ(points_C.size(), colors.size());
 
@@ -574,7 +579,7 @@ void FastTsdfIntegrator::integratePointCloud(const Transformation& T_G_C,
   std::list<std::thread> integration_threads;
   for (size_t i = 0; i < config_.integrator_threads; ++i) {
     integration_threads.emplace_back(&FastTsdfIntegrator::integrateFunction,
-                                     this, T_G_C, points_C, colors,
+                                     this, T_G_C, T_O, points_C, colors,
                                      freespace_points, index_getter.get());
   }
 

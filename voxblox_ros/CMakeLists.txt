@@ -14,6 +14,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # LIBRARIES #
 #############
 cs_add_library(${PROJECT_NAME}
+  src/dynamic_mapping/dynamic_mapper.cc
+  src/dynamic_mapping/dynamic_mapping_server.cc
+  src/dynamic_mapping/dynamic_object.cc
+  src/dynamic_mapping/pcl_icp.cc
   src/esdf_server.cc
   src/interactive_slider.cc
   src/simulation_server.cc
@@ -30,6 +34,11 @@ cs_add_executable(voxblox_eval
   src/voxblox_eval.cc
 )
 target_link_libraries(voxblox_eval ${PROJECT_NAME})
+
+cs_add_executable(dynamic_mapping_server
+  src/dynamic_mapping/dynamic_mapping_server_node.cc
+)
+target_link_libraries(dynamic_mapping_server ${PROJECT_NAME})
 
 cs_add_executable(tsdf_server
   src/tsdf_server_node.cc

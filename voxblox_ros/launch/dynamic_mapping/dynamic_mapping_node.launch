@@ -1,0 +1,27 @@
+<launch>
+  <arg name="scene_name" default="synthetic_dataset" />
+  <arg name="pointcloud_topic_with_semantic_segmentation" default="/rgbd_segmentation_node/segment_pointcloud" />
+  <arg name="pointcloud_topic_without_semantic_segmentation" default="/lidar_modt_node/final_cloud" />
+  <arg name="use_semantic_segmentation" default="true" />
+  <arg name="world_frame" default="world" />
+  <arg name="verbose" default="true" />
+  <arg name="visualize" default="true" />
+
+	<node pkg="voxblox_ros" type="dynamic_mapping_server" name="dynamic_mapping_server" output="screen">
+		<rosparam command="load" file="$(find voxblox_ros)/cfg/dynamic_mapping/default.yaml" />
+	  <rosparam command="load" file="$(find voxblox_ros)/cfg/dynamic_mapping/$(arg scene_name).yaml" />
+
+    <!-- Load the human-readable Microsoft COCO 80 object categories. -->
+		<rosparam command="load" file="$(find voxblox_ros)/cfg/dynamic_mapping/yolact_classes.yaml" />
+
+    <param name="world_frame" value="$(arg world_frame)"/>
+
+    <param name="pointcloud_topic" value="$(arg pointcloud_topic_with_semantic_segmentation)" if="$(arg use_semantic_segmentation)" />
+    <param name="pointcloud_topic" value="$(arg pointcloud_topic_without_semantic_segmentation)" unless="$(arg use_semantic_segmentation)" />
+    <param name="visualizer/enable" value="$(arg visualize)" />
+    <param name="meshing/update_mesh_every_n_sec" value="1.0" unless="$(arg visualize)" />
+
+    <param name="verbose" value="$(arg verbose)"/>
+
+  </node>
+</launch>

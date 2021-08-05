@@ -1,0 +1,44 @@
+background:
+  map:
+    voxel_size: 0.1
+    voxels_per_side: 8
+  integrator:
+    method: "merged"
+    truncation_distance: 0.5
+    max_ray_length_m: 10.0
+    # voxel_carving_enabled: true
+    allow_clear: true
+    # anti_grazing: false # merge integrator specific
+    # use_const_weight: false
+    # min_ray_length_m: 0.1
+
+object:
+  map:
+    dynamic: true # Voxel size will be determined based on object size
+    voxel_size: 0.05
+    voxels_per_side: 8
+  integrator:
+    method: "merged"
+    truncation_distance: 0.1
+    max_ray_length_m: 10.0
+    # voxel_carving_enabled: true
+    allow_clear: true
+    # anti_grazing: false # merge integrator specific
+    # use_const_weight: false
+    # min_ray_length_m: 0.1
+
+icp:
+  enable: true
+  icp_use_reciprocal_correspondences: true
+  icp_max_correspondence_distance: 100
+  icp_use_symmetric_objective: false
+  icp_max_iterations: 50
+  icp_transformation_epsilon: 0.000002
+  icp_absolute_mse: 0.000000000001
+  icp_euclidean_fitness_epsilon: 0.0001 # 0.01 = improvement of 1% of previous MSE.
+
+meshing:
+  color_mode: "lambert_color"
+  update_mesh_every_n_sec: 1.0
+  publish_mesh: true
+  mesh_filename: "tpp_map.ply"

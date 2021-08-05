@@ -82,7 +82,7 @@ inline void lambertColorFromColorAndNormal(const Color& color,
   // OpenChisel.
   const Point light_dir = Point(0.8f, -0.2f, 0.7f).normalized();
   const Point light_dir2 = Point(-0.5f, 0.2f, 0.2f).normalized();
-  const Point ambient(0.2f, 0.2f, 0.2f);
+  const Point ambient(0.1f, 0.1f, 0.1f);
   const Point color_pt(color.r / 255.0, color.g / 255.0, color.b / 255.0);
 
   Point lambert = lambertShading(normal, light_dir, color_pt) +
@@ -151,14 +151,20 @@ inline std_msgs::ColorRGBA getVertexColor(const Mesh::ConstPtr& mesh,
 }
 
 inline void generateVoxbloxMeshMsg(MeshLayer* mesh_layer, ColorMode color_mode,
-                                   voxblox_msgs::Mesh* mesh_msg) {
+                                   voxblox_msgs::Mesh* mesh_msg,
+                                   const bool transformable) {
   CHECK_NOTNULL(mesh_msg);
   CHECK_NOTNULL(mesh_layer);
 
   mesh_msg->header.stamp = ros::Time::now();
 
   BlockIndexList mesh_indices;
-  mesh_layer->getAllUpdatedMeshes(&mesh_indices);
+  if (transformable){
+    mesh_layer->getAllAllocatedMeshes(&mesh_indices);
+  } else {
+    mesh_layer->getAllUpdatedMeshes(&mesh_indices);
+  }
+
 
   mesh_msg->block_edge_length = mesh_layer->block_size();
   mesh_msg->mesh_blocks.reserve(mesh_indices.size());
@@ -231,10 +237,11 @@ inline void generateVoxbloxMeshMsg(MeshLayer* mesh_layer, ColorMode color_mode,
 
 inline void generateVoxbloxMeshMsg(const MeshLayer::Ptr& mesh_layer,
                                    ColorMode color_mode,
-                                   voxblox_msgs::Mesh* mesh_msg) {
+                                   voxblox_msgs::Mesh* mesh_msg,
+                                   const bool transformable = false) {
   CHECK_NOTNULL(mesh_msg);
   CHECK(mesh_layer);
-  generateVoxbloxMeshMsg(mesh_layer.get(), color_mode, mesh_msg);
+  generateVoxbloxMeshMsg(mesh_layer.get(), color_mode, mesh_msg, transformable);
 }
 
 inline void fillMarkerWithMesh(const MeshLayer::ConstPtr& mesh_layer,
