@@ -30,8 +30,6 @@ void DynamicMapper::reset(){
 void DynamicMapper::setInputCloud(
         pcl::PointCloud<InputPointType>::Ptr input_cloud, const Transformation& T_G_C){
 
-  // reset();
-
   background_object_.reset();
 
   std::set<int> occuring_objects;
@@ -64,7 +62,8 @@ void DynamicMapper::setInputCloud(
     new_point.b = point.b;
 
     if (id == 0){ // Background
-      background_object_.cloud_current_->points.push_back(new_point);
+      // Check if point wrongly assigned as background
+      if (!checkPointInObject(point)) background_object_.cloud_current_->points.push_back(new_point);
     } else {
 
       bool object_is_known =  std::any_of(objects_.begin(), objects_.end(),
@@ -112,11 +111,38 @@ void DynamicMapper::setInputCloud(
 
 }
 
+bool DynamicMapper::checkPointInObject(const InputPointType point){
+
+  float padding = 0.1; //TODO parameter
+  for (auto & object : objects_)
+  {
+
+    pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr object_mesh = object.getMeshCloud();
+    pcl::PointXYZRGBNormal p_min, p_max;
+    pcl::getMinMax3D(*object_mesh, p_min, p_max);
+
+    if ((point.x < p_min.x - padding || point.x > p_max.x + padding) ||
+        (point.y < p_min.y - padding || point.y > p_max.y + padding) ||
+        (point.z < p_min.z - padding || point.z > p_max.z + padding)) continue;
+    else return true;
+  }
+  return false;
+}
+
 void DynamicMapper::align(){
 
   for (auto & object : objects_)
   {
     object.align();
+  }
+
+}
+
+void DynamicMapper::updateObjectStates(const Transformation& T_G_C){
+
+  for (auto & object : objects_)
+  {
+    object.updateState(T_G_C);
   }
 
 }

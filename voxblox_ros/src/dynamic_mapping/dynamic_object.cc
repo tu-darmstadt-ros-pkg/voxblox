@@ -1,9 +1,9 @@
 #include "voxblox_ros/dynamic_mapping/dynamic_object.h"
 
+#include <iostream>
 #include <pcl/common/time.h>
 
-
-#include <iostream>
+#include "voxblox_ros/dynamic_mapping/obb_utils.h"
 
 namespace voxblox {
 
@@ -205,8 +205,81 @@ void DynamicObject::align(){
 
   pcl::transformPointCloud (*cloud_current_, *cloud_transformed_, T_O_accumulated_);
 
+}
 
+// void DynamicObject::align2(){
+//
+//   if (!occured_in_current_frame_) return;
+//
+//   Eigen::Matrix4f T_O = Eigen::Matrix4f::Identity();
+//
+//   Mesh connected_mesh;
+//   mesh_layer_->getConnectedMesh(&connected_mesh);
+//
+//   if (!(cloud_current_->empty() ||
+//         cloud_last_->empty() ||
+//         connected_mesh.vertices.empty()))
+//   { //TODO CLEAN up intendation with visual studio code
+//
+//     // std::cout<<"Align Object "<<id_<<std::endl;
+//
+//     for (size_t idx = 0;  idx <  connected_mesh.vertices.size(); idx++){
+//       pcl::PointXYZRGBNormal point;
+//       point.x = connected_mesh.vertices[idx](0,0);
+//       point.y = connected_mesh.vertices[idx](1,0);
+//       point.z = connected_mesh.vertices[idx](2,0);
+//       point.normal_x = connected_mesh.normals[idx](0,0);
+//       point.normal_y = connected_mesh.normals[idx](1,0);
+//       point.normal_z = connected_mesh.normals[idx](2,0);
+//       mesh_cloud_->push_back(point);
+//     }
+//     pcl::StopWatch test;
+//
+//     // Calculate object centroid
+//     float c_x = 0;
+//     float c_y = 0;
+//     float c_z = 0;
+//     for (size_t idx = 0u;  idx < (*cloud_current_).size(); ++idx)
+//     {
+//
+//       c_x += cloud_current_->points[idx].x;
+//       c_y += cloud_current_->points[idx].y;
+//       c_z += cloud_current_->points[idx].z;
+//
+//     }
+//     c_x /= (*cloud_current_).size();
+//     c_y /= (*cloud_current_).size();
+//     c_z /= (*cloud_current_).size();
+//
+//
+//     Eigen::Matrix4f T_O_0 = Eigen::Matrix4f::Identity();
+//     T_O_0(0,3) = - c_x;
+//     T_O_0(1,3) = - c_y;
+//     T_O_0(2,3) = - c_z;
+//
+//     // Shift object to zero
+//     pcl::transformPointCloud (*cloud_current_, *cloud_transformed_, T_O_0);
+//
+//
+//     double fitness_score;
+//     bool SuccessFirst = icp_->align(cloud_transformed_, mesh_cloud_,
+//                             Eigen::Matrix4f::Identity(), &T_O, &fitness_score);
+//
+//
+//     T_O_accumulated_ =  T_O_0 * T_O;
+//
+//   }
+//
+//   pcl::transformPointCloud (*cloud_current_, *cloud_transformed_, T_O_accumulated_);
+//
+// }
 
+void DynamicObject::updateState(const Transformation& T_G_C){
+
+  Eigen::Matrix4f result_transform = T_G_C.getTransformationMatrix()
+                                                  * T_O_accumulated_.inverse();
+
+  state_ = getOBBDetection(getMeshCloud(), result_transform);
 
 }
 

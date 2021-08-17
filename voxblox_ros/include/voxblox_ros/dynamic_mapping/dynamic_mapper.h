@@ -52,6 +52,10 @@ class DynamicMapper {
 
   void generateMesh();
 
+  void updateObjectStates(const Transformation& T_G_C);
+
+  bool checkPointInObject(const InputPointType point);
+
   void reset();
 
   int getNumObjects() const { return objects_.size(); }

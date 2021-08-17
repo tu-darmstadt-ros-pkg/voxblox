@@ -9,8 +9,6 @@
 #include "voxblox_ros/ros_params.h"
 #include "voxblox_ros/dynamic_mapping/ros_params_dynamic_mapping.h"
 
-#include "voxblox_ros/dynamic_mapping/obb_utils.h"
-
 #include <jsk_recognition_msgs/BoundingBox.h>
 #include <jsk_recognition_msgs/BoundingBoxArray.h>
 
@@ -174,6 +172,8 @@ void DynamicMappingServer::DynamicMappingCallback(
     dynamic_mapper.generateMesh();
     generate_mesh_timer.Stop();
 
+    dynamic_mapper.updateObjectStates(T_G_C_);
+
     timing::Timer publish_mesh_timer("mesh/publish");
     updateMesh();
     publish_mesh_timer.Stop();
@@ -217,10 +217,10 @@ void DynamicMappingServer::updateMesh() {
 
     pcl::PointXYZRGBNormal origMinPoint, origMaxPoint;
     pcl::getMinMax3D(*object.getMeshCloud(), origMinPoint, origMaxPoint);
-    std::cout<<"MESH TF CLOUD MID"<<object.getID()<<std::endl;
-    std::cout<<(origMaxPoint.x +  origMinPoint.x)/2.0<<" "
-             <<(origMaxPoint.y +  origMinPoint.y)/2.0<<" "
-             <<(origMaxPoint.z +  origMinPoint.z)/2.0<<" "<<std::endl;
+    // std::cout<<"MESH TF CLOUD MID"<<object.getID()<<std::endl;
+    // std::cout<<(origMaxPoint.x +  origMinPoint.x)/2.0<<" "
+    //          <<(origMaxPoint.y +  origMinPoint.y)/2.0<<" "
+    //          <<(origMaxPoint.z +  origMinPoint.z)/2.0<<" "<<std::endl;
 
 
     mesh_msg.transform.translation.x = result_transform(0,3);
@@ -301,11 +301,7 @@ void DynamicMappingServer::visualizeBBoxes(std::string frame_id){
 
     if (object.getMeshCloud()->points.empty()) continue;
 
-    pcl::PointXYZRGBNormal origMinPoint, origMaxPoint;
-    pcl::getMinMax3D(*object.getMeshCloud(), origMinPoint, origMaxPoint);
-
-    Eigen::Matrix<float, 7, 1> object_state = getOBBDetection(
-                        object.getMeshCloud(), result_transform);
+    Eigen::Matrix<float, 7, 1> object_state = object.getState();
 
     float bbox_x = object_state(0);
     float bbox_y = object_state(1);

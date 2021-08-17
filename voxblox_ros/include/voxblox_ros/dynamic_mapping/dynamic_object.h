@@ -42,6 +42,8 @@ namespace voxblox
 
     void generateMesh();
 
+    void updateState(const Transformation& T_G_C);
+
     void align();
 
     void updatePosition(const Transformation& T_G_C);
@@ -60,6 +62,10 @@ namespace voxblox
 
     // Point getTranslation() const { return trajectory_.back() - trajectory_.front(); }
     Eigen::Matrix4f getTransformation() const { return T_O_accumulated_; }
+
+    Eigen::Matrix<float, 7, 1> getState() const { return state_; }
+
+
 
 
     pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr getTransformedCloud() const { return cloud_transformed_; }
@@ -97,6 +103,8 @@ namespace voxblox
 
     bool occured_in_current_frame_;
     int time_since_last_occurence_;
+
+    Eigen::Matrix<float, 7, 1> state_;
 
     Color mesh_color_;
 
