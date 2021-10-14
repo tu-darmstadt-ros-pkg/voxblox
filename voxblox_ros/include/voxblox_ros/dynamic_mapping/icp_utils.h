@@ -39,9 +39,6 @@ inline bool checkConvergenceState(ConvergenceState state) {
   if (state == ConvergenceState::CONVERGENCE_CRITERIA_NOT_CONVERGED ||
       state == ConvergenceState::CONVERGENCE_CRITERIA_NO_CORRESPONDENCES ||
       state == ConvergenceState::CONVERGENCE_CRITERIA_ITERATIONS) {
-    if (state == ConvergenceState::CONVERGENCE_CRITERIA_NOT_CONVERGED)std::cout<<"1"<<std::endl;
-    if (state == ConvergenceState::CONVERGENCE_CRITERIA_NO_CORRESPONDENCES)std::cout<<"2"<<std::endl;
-    if (state == ConvergenceState::CONVERGENCE_CRITERIA_ITERATIONS) std::cout<<"3"<<std::endl;
     LOG(INFO) << "\nICP has NOT CONVERGED. ";
   } else {
     success = true;

@@ -16,16 +16,12 @@ Vector7f getOBBDetection(
 {
 
     pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cluster_cloud_post_transform(
-                                          new pcl::PointCloud<pcl::PointXYZRGBNormal>);
-    pcl::transformPointCloud (*cluster_cloud, *cluster_cloud_post_transform, post_transformation);
+                                new pcl::PointCloud<pcl::PointXYZRGBNormal>);
+    pcl::transformPointCloud (
+            *cluster_cloud, *cluster_cloud_post_transform, post_transformation);
 
     pcl::PointXYZRGBNormal origMinPoint, origMaxPoint;
     pcl::getMinMax3D(*cluster_cloud_post_transform, origMinPoint, origMaxPoint);
-
-    // std::cout<<(origMaxPoint.x +  origMinPoint.x)/2.0<<" "
-    //          <<(origMaxPoint.y +  origMinPoint.y)/2.0<<" "
-    //          <<(origMaxPoint.z +  origMinPoint.z)/2.0<<" "<<std::endl;
-
 
     pcl::PointCloud<pcl::PointXYZ>::Ptr cluster_cloud_transformed(
                                             new pcl::PointCloud<pcl::PointXYZ>);

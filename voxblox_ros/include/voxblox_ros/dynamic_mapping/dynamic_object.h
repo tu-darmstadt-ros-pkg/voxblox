@@ -4,19 +4,18 @@
 #include <vector>
 #include <list>
 
-#include <pcl/common/common.h> //TODO: clean includes
+#include <pcl/common/common.h>
+
+#include <geometry_msgs/PoseStamped.h>
 
 #include "voxblox/core/tsdf_map.h"
-#include <voxblox_ros/dynamic_mapping/pcl_icp.h>
-#include "voxblox_ros/dynamic_mapping/common.h"
-
-
 #include <voxblox/integrator/tsdf_integrator.h>
 #include <voxblox/mesh/mesh_integrator.h>
 #include <voxblox/utils/color_maps.h>
 
 #include "voxblox_ros/conversions.h"
-// #include "voxblox_ros/ros_params.h"
+#include "voxblox_ros/dynamic_mapping/pcl_icp.h"
+#include "voxblox_ros/dynamic_mapping/common.h"
 
 namespace voxblox
 {
@@ -32,8 +31,8 @@ namespace voxblox
                   const MeshIntegratorConfig& mesh_config,
                   const std::shared_ptr<PCL_ICP>& icp,
                   std::string method,
-                  bool dynamic_voxel_size,
-                  const int id, const int semantic_class, Color mesh_color);
+                  const int id, const int semantic_class, Color mesh_color,
+                  const int max_num_resets_before_inactive);
     virtual ~DynamicObject() = default;
 
     void convertPointclouds(std::shared_ptr<ColorMap> color_map_);
@@ -42,15 +41,22 @@ namespace voxblox
 
     void generateMesh();
 
-    void updateState(const Transformation& T_G_C);
+    void updateState(const Transformation& T_G_C,
+                        const sensor_msgs::PointCloud2::Ptr& pointcloud_msg);
 
-    void align();
+    void updateMeshMinMax();
+
+    bool isPointInside(const InputPointType point);
+
+    int align(const Transformation& T_G_C);
 
     void updatePosition(const Transformation& T_G_C);
 
     void reset();
 
-    void setSemanticClass(const int semantic_class); //TODO everything const which can be const
+    void initNextStep();
+
+    void setSemanticClass(const int semantic_class);
 
     std::shared_ptr<TsdfMap> getTsdfMap() const { return map_; }
     std::shared_ptr<MeshLayer> getMeshLayer() const { return mesh_layer_; }
@@ -59,40 +65,29 @@ namespace voxblox
     void increaseOccurenceCounter() {time_since_last_occurence_++; }
 
     int getTimeSinceLastOccurence() const { return time_since_last_occurence_; }
-
-    // Point getTranslation() const { return trajectory_.back() - trajectory_.front(); }
     Eigen::Matrix4f getTransformation() const { return T_O_accumulated_; }
-
     Eigen::Matrix<float, 7, 1> getState() const { return state_; }
+    std::vector<geometry_msgs::PoseStamped> getTrajectory()
+                                      const { return stamped_trajectory_; }
+    void setVoxelSize(float min_size, float max_size);
+    void setInactive() {active_ = false; }
+    void setDelete() {delete_ = true; }
+    bool getDelete() const { return delete_; }
+    bool isActive() const { return active_; }
 
-
-
-
-    pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr getTransformedCloud() const { return cloud_transformed_; }
-    pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr getMeshCloud() const { return mesh_cloud_; }
+    pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr getTransformedCloud()
+                    const { return cloud_transformed_; }
+    pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr getMeshCloud()
+                    const { return mesh_cloud_; }
 
     int getID() const { return id_; }
     int getSemanticClass() const { return semantic_class_; }
 
 
 
-    /**
-     * Integrates background and objects
-    */
-    //void integrate(const Transformation& T_G_C, const bool is_freespace_pointcloud);
-
-    // pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud_start_;
-
     pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud_current_;
-    pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud_last_;
-
-    pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud_transformed_;
-
-    pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr mesh_cloud_;
-
     Eigen::Matrix4f T_O_accumulated_;
-
-    Eigen::Matrix4f T_O_last_; //TODO Propper naming and public private reorder
+    Eigen::Matrix4f T_O_last_;
 
   private:
 
@@ -100,16 +95,25 @@ namespace voxblox
     int semantic_class_;
     int semantic_class_confidence_;
     bool semantic_class_set_;
-
     bool occured_in_current_frame_;
     int time_since_last_occurence_;
+    int frames_not_aligned_;
+    Color mesh_color_;
+
+    std::shared_ptr<PCL_ICP> icp_;
+
+    pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud_last_;
+    pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud_current_transformed_;
+    pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud_last_transformed_;
+    pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud_transformed_;
+    pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud_accumulated_;
+    pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr mesh_cloud_;
+
 
     Eigen::Matrix<float, 7, 1> state_;
 
-    Color mesh_color_;
-
     std::vector<Point> trajectory_;
-
+    std::vector<geometry_msgs::PoseStamped> stamped_trajectory_;
     std::shared_ptr<ColorMap> color_map_;
 
     // Maps and integrators.
@@ -118,10 +122,25 @@ namespace voxblox
     std::shared_ptr<MeshLayer> mesh_layer_;
     std::shared_ptr<MeshIntegrator<TsdfVoxel>> mesh_integrator_;
 
-    std::shared_ptr<PCL_ICP> icp_;
+
+    pcl::PointXYZRGBNormal p_mesh_min_, p_mesh_max_;
+
+    TsdfMap::Config tsdf_config_;
+    TsdfIntegratorBase::Config integrator_config_;
+    MeshIntegratorConfig mesh_config_;
+    std::string integrator_method_;
+
+    int reset_counter_;
+    bool active_;
+    bool delete_;
+    bool not_aligned_;
+    bool static_;
+    bool voxel_size_set_;
+
+    float xy_in_object_padding_;
+    int max_num_resets_before_inactive_;
 
   };
-
 
 }  // namespace voxblox
 

@@ -1,29 +1,33 @@
 background:
   map:
-    voxel_size: 0.2
+    voxel_size: 0.08
     voxels_per_side: 8
   integrator:
     method: "merged"
-    truncation_distance: 0.5
-    max_ray_length_m: 10.0
-    # voxel_carving_enabled: true
+    truncation_distance: 0.8
+    max_ray_length_m: 100.0
+    voxel_carving_enabled: false
     allow_clear: true
     # anti_grazing: false # merge integrator specific
     # use_const_weight: false
     # min_ray_length_m: 0.1
 
 object:
+  max_steps_since_last_occurence: 3
+  alignment:
+    max_consecutive_alignment_failures: 3
+    max_num_resets_before_inactive: 2
   map:
-    dynamic: true # Voxel size will be determined based on object size
-    voxel_size: 0.05
-    voxels_per_side: 8
+    min_voxel_size: 0.03
+    max_voxel_size: 0.03
+    voxels_per_side: 16
   integrator:
-    method: "fast"
-    truncation_distance: 0.1
-    max_ray_length_m: 10.0
-    # voxel_carving_enabled: true
-    allow_clear: true
-    # anti_grazing: false # merge integrator specific
+    method: "merged"
+    truncation_distance: 0.08
+    max_ray_length_m: 100.0
+    voxel_carving_enabled: false
+    allow_clear: false
+    anti_grazing: true # merge integrator specific
     # use_const_weight: false
     # min_ray_length_m: 0.1
 
@@ -32,10 +36,10 @@ icp:
   icp_use_reciprocal_correspondences: true
   icp_max_correspondence_distance: 100
   icp_use_symmetric_objective: false
-  icp_max_iterations: 50
+  icp_max_iterations: 60
   icp_transformation_epsilon: 0.000002
-  icp_absolute_mse: 0.000000000001
-  icp_euclidean_fitness_epsilon: 0.0001 # 0.01 = improvement of 1% of previous MSE.
+  icp_absolute_mse: 0.000000000000001
+  icp_euclidean_fitness_epsilon: 0.01
 
 meshing:
   color_mode: "lambert_color"

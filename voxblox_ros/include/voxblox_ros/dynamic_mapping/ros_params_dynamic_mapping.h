@@ -152,9 +152,21 @@ inline DynamicMapper::Config getDynamicMapperConfigFromRosParam(
   nh_private.param("object/integrator/method",
                    dynamic_mapper_config.object_integrator_method,
                    dynamic_mapper_config.object_integrator_method);
-  nh_private.param("object_map/dynamic",
-                   dynamic_mapper_config.dynamic_object_voxel_size,
-                   dynamic_mapper_config.dynamic_object_voxel_size);
+  nh_private.param("object/map/min_voxel_size",
+                   dynamic_mapper_config.dynamic_object_min_voxel_size,
+                   dynamic_mapper_config.dynamic_object_min_voxel_size);
+  nh_private.param("object/map/max_voxel_size",
+                   dynamic_mapper_config.dynamic_object_max_voxel_size,
+                   dynamic_mapper_config.dynamic_object_max_voxel_size);
+  nh_private.param("object/max_steps_since_last_occurence",
+                   dynamic_mapper_config.max_steps_since_last_occurence,
+                   dynamic_mapper_config.max_steps_since_last_occurence);
+  nh_private.param("object/alignment/max_consecutive_alignment_failures",
+                   dynamic_mapper_config.max_consecutive_alignment_failures,
+                   dynamic_mapper_config.max_consecutive_alignment_failures);
+  nh_private.param("object/alignment/max_num_resets_before_inactive",
+                   dynamic_mapper_config.max_num_resets_before_inactive,
+                   dynamic_mapper_config.max_num_resets_before_inactive);
 
 
   return dynamic_mapper_config;

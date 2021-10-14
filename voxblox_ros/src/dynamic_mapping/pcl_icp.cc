@@ -70,9 +70,6 @@ bool PCL_ICP::align(const pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr source_cl
   pcl::IterativeClosestPointWithNormals<pcl::PointXYZRGBNormal, pcl::PointXYZRGBNormal> icp_ =
       init();
 
-  // std::cout << "ICP: " <<std::endl;
-  // std::cout << source_cloud->points.size() <<std::endl;
-  // std::cout << target_cloud->points.size() <<std::endl;
   icp_.setMaximumIterations(config_.max_iterations);
   icp_.setInputSource(source_cloud);
   icp_.setInputTarget(target_cloud);

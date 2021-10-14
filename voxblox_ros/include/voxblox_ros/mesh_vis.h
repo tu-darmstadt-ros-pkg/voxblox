@@ -165,6 +165,9 @@ inline void generateVoxbloxMeshMsg(MeshLayer* mesh_layer, ColorMode color_mode,
     mesh_layer->getAllUpdatedMeshes(&mesh_indices);
   }
 
+  if (mesh_indices.size() == 0){ // Prevent empty mesh_msgs for background
+    mesh_layer->getAllAllocatedMeshes(&mesh_indices);
+  }
 
   mesh_msg->block_edge_length = mesh_layer->block_size();
   mesh_msg->mesh_blocks.reserve(mesh_indices.size());

@@ -1,31 +1,30 @@
 <launch>
-  <arg name="scene_name" default="dynamic_mapping_tud" />
-  <arg name="sensor_name" default="dynamic_mapping" />
+  <arg name="scene_name" default="scene_1" />
   <arg name="world_frame" default="odom" />
 
+  <arg name="image_topic" default="/sensor_head_rgbd_cam/color/image_rect_color" />
+  <!-- <arg name="image_topic" default="/camera/rgb/image_rect_color" /> -->
+  <!-- <arg name="image_topic" default="/sensor_head_zoom_cam/image_color" /> -->
+
   <arg name="use_semantic_segmentation" default="true" />
-  <arg name="visualize" default="false" />
   <arg name="verbose" default="false" />
 
   <node pkg="lidar_modt" type="lidar_modt_node" name="lidar_modt_node" output="screen">
-    <rosparam command="load" file="$(find lidar_modt)/config/$(arg scene_name).yaml" />
     <param name="world_frame" value="$(arg world_frame)"/>
     <param name="pointcloud_topic" value="/scan_cloud_filtered"/>
-    <param name="viewer/enable" value="$(arg visualize)" />
   </node>
 
   <include file="$(find voxblox_ros)/launch/dynamic_mapping/dynamic_mapping_node.launch" >
     <arg name="scene_name" value="$(arg scene_name)" />
     <arg name="world_frame" value="$(arg world_frame)"/>
     <arg name="use_semantic_segmentation" value="$(arg use_semantic_segmentation)" />
-    <arg name="visualize" value="$(arg visualize)" />
     <arg name="verbose" value="$(arg verbose)" />
   </include>
 
-  <include file="$(find rgbd_segmentation)/launch/rgbd_segmentation.launch" if="$(arg use_semantic_segmentation)">
+  <include file="$(find segmentation_fusion)/launch/segmentation_fusion.launch" if="$(arg use_semantic_segmentation)">
     <arg name="scene_name" value="$(arg scene_name)" />
     <arg name="world_frame" value="$(arg world_frame)"/>
-    <arg name="visualize" value="$(arg visualize)" />
+    <arg name="image_topic" value="$(arg image_topic)"/>
   </include>
 
 </launch>

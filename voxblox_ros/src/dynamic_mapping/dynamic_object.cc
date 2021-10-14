@@ -12,55 +12,141 @@ DynamicObject::DynamicObject(const TsdfMap::Config& tsdf_config,
                             const MeshIntegratorConfig& mesh_config,
                             const std::shared_ptr<PCL_ICP>& icp,
                             std::string method,
-                            bool dynamic_voxel_size,
                             const int id, const int semantic_class,
-                            Color mesh_color)
-  : id_(id),
+                            Color mesh_color,
+                            const int max_num_resets_before_inactive)
+  : cloud_current_(new pcl::PointCloud<pcl::PointXYZRGBNormal>),
+    T_O_accumulated_(Eigen::Matrix4f::Identity()),
+    T_O_last_(Eigen::Matrix4f::Identity()),
+    id_(id),
     semantic_class_(semantic_class),
     semantic_class_confidence_(0),
     semantic_class_set_(true),
     occured_in_current_frame_(true),
     time_since_last_occurence_(0),
+    frames_not_aligned_(0),
     mesh_color_(mesh_color),
     icp_(icp),
-    cloud_current_(new pcl::PointCloud<pcl::PointXYZRGBNormal>),
     cloud_last_(new pcl::PointCloud<pcl::PointXYZRGBNormal>),
+    cloud_current_transformed_(new pcl::PointCloud<pcl::PointXYZRGBNormal>),
+    cloud_last_transformed_(new pcl::PointCloud<pcl::PointXYZRGBNormal>),
     cloud_transformed_(new pcl::PointCloud<pcl::PointXYZRGBNormal>),
+    cloud_accumulated_(new pcl::PointCloud<pcl::PointXYZRGBNormal>),
     mesh_cloud_(new pcl::PointCloud<pcl::PointXYZRGBNormal>),
-    T_O_accumulated_(Eigen::Matrix4f::Identity()),
-    T_O_last_(Eigen::Matrix4f::Identity()),
-    color_map_(new RainbowColorMap())
-{
+    color_map_(new RainbowColorMap()),
+    tsdf_config_(tsdf_config),
+    integrator_config_(integrator_config),
+    mesh_config_(mesh_config),
+    integrator_method_(method),
+    reset_counter_(-1),
+    active_(true),
+    delete_(false),
+    static_(false),
+    voxel_size_set_(false),
+    xy_in_object_padding_(0.05),
+    max_num_resets_before_inactive_(max_num_resets_before_inactive)
+{}
 
-  map_.reset(new TsdfMap(tsdf_config));
+void DynamicObject::setVoxelSize(float min_size, float max_size){
 
-  if (method.compare("simple") == 0) {
+  if(voxel_size_set_) return;
+  voxel_size_set_ = true;
+
+  int num_bins = 6;
+
+  std::vector<float> curvature_values;
+  for (const auto& point : cloud_current_->points)
+                            curvature_values.push_back(point.curvature);
+  float max_curvature = *std::max_element(
+                              curvature_values.begin(), curvature_values.end());
+
+  if (max_curvature <= 1e-6){
+    tsdf_config_.tsdf_voxel_size = max_size;
+    integrator_config_.default_truncation_distance = 3 * max_size;
+    reset();
+    return;
+  }
+  std::vector<float> hist(num_bins, 0);
+  float bin_size = max_curvature / num_bins;
+  float num_pts_inv = 1.0 / curvature_values.size();
+  float bin_size_inv = 1.0 / bin_size;
+
+  for (const auto& value : curvature_values)
+  {
+    // Last bin includes the right bound
+    int bin = std::min(static_cast<int>(value * bin_size_inv), num_bins - 1);
+    hist[bin] += num_pts_inv;
+  }
+
+
+  float max_height = 0.0;
+  int max_idx = 0;
+  for (int idx=0; idx < hist.size(); idx++)
+  {
+    float value = hist[idx];
+    if(value > max_height){
+      max_height = value;
+      max_idx = idx;
+    }
+  }
+
+  int diff = num_bins - 1;
+  float prop = max_idx*1.0/diff;
+  float size = max_size - prop * (max_size - min_size);
+
+  tsdf_config_.tsdf_voxel_size = size;
+  integrator_config_.default_truncation_distance = 3 * size;
+  reset();
+
+}
+
+void DynamicObject::reset(){
+
+  if(!active_) return;
+
+  reset_counter_++;
+
+  if (reset_counter_ >= max_num_resets_before_inactive_){
+    active_ = false;
+  }
+
+  frames_not_aligned_ = 0;
+
+  T_O_accumulated_ = Eigen::Matrix4f::Identity();
+  T_O_last_ = Eigen::Matrix4f::Identity();
+  cloud_transformed_->clear();
+
+  map_.reset(new TsdfMap(tsdf_config_));
+
+  if (integrator_method_.compare("simple") == 0) {
     integrator_.reset(new SimpleTsdfIntegrator(
-        integrator_config, map_->getTsdfLayerPtr()));
-  } else if (method.compare("merged") == 0) {
+        integrator_config_, map_->getTsdfLayerPtr()));
+  } else if (integrator_method_.compare("merged") == 0) {
     integrator_.reset(new MergedTsdfIntegrator(
-        integrator_config, map_->getTsdfLayerPtr()));
-  } else if (method.compare("fast") == 0) {
+        integrator_config_, map_->getTsdfLayerPtr()));
+  } else if (integrator_method_.compare("fast") == 0) {
     integrator_.reset(new FastTsdfIntegrator(
-        integrator_config, map_->getTsdfLayerPtr()));
+        integrator_config_, map_->getTsdfLayerPtr()));
   } else {
     integrator_.reset(new SimpleTsdfIntegrator(
-        integrator_config, map_->getTsdfLayerPtr()));
+        integrator_config_, map_->getTsdfLayerPtr()));
   }
 
   mesh_layer_.reset(new MeshLayer(map_->block_size()));
 
   mesh_integrator_.reset(new MeshIntegrator<TsdfVoxel>(
-      mesh_config, map_->getTsdfLayerPtr(), mesh_layer_.get()));
+      mesh_config_, map_->getTsdfLayerPtr(), mesh_layer_.get()));
 
 }
 
-void DynamicObject::reset() {
+void DynamicObject::initNextStep() {
 
   // Update last cloud and prepare current cloud to be filled
   *cloud_last_ = *cloud_current_;
+  *cloud_last_transformed_ = *cloud_current_transformed_;
   cloud_current_->clear();
-  mesh_cloud_->clear();
+  cloud_current_transformed_->clear();
+
   // Update occurence flage and reset counter
   occured_in_current_frame_ = true;
   time_since_last_occurence_ = 0;
@@ -70,12 +156,10 @@ void DynamicObject::reset() {
 
 void DynamicObject::setSemanticClass(const int semantic_class){
 
+  if (!active_) return;
+
   // Semantic class already set in this frame or object did not occur
   if (semantic_class_set_ || semantic_class == -1) return;
-
-  // std::cout << "Set class for Object: "<< id_ <<std::endl;
-  // std::cout << "Class: "<< semantic_class << std::endl;
-  // std::cout << "Conf: "<< semantic_class_confidence_ << std::endl;
 
   if (semantic_class == -2){ // Object was seen but not recognized
     semantic_class_confidence_ = std::max(semantic_class_confidence_ - 1, 0);
@@ -84,9 +168,11 @@ void DynamicObject::setSemanticClass(const int semantic_class){
       semantic_class_ = semantic_class;
     } else {
       if (semantic_class_ == semantic_class){
-        semantic_class_confidence_ = std::min(semantic_class_confidence_ + 1, 10);
+        semantic_class_confidence_ = std::min(
+                                    semantic_class_confidence_ + 1, 10);
       } else {
-        semantic_class_confidence_ = std::max(semantic_class_confidence_ - 1, 0);
+        semantic_class_confidence_ = std::max(
+                                    semantic_class_confidence_ - 1, 0);
         if (semantic_class_confidence_ == 0){
           semantic_class_ = semantic_class;
         }
@@ -97,48 +183,53 @@ void DynamicObject::setSemanticClass(const int semantic_class){
   semantic_class_set_ = true;
 }
 
-
 void DynamicObject::integrate(
   const Transformation& T_G_C, const bool is_background) {
+
+  if (!active_) return;
 
   if (!occured_in_current_frame_) return;
 
   Pointcloud points;
   Colors colors;
 
-  Transformation T_O;
+  Transformation T_ACC;
   if (is_background){
-    T_O = Transformation();
+    T_ACC = Transformation();
     convertPointcloud(*cloud_current_, color_map_, &points, &colors);
-
+    integrator_->integratePointCloud(T_G_C, points, colors, false, T_ACC);
   } else {
-    // TODO SOMETIMES ERROR HERE with isValidRotationMatrix from minkindr
-    // This detour prevents it
-    Eigen::Quaternionf quat = Eigen::Quaternionf(T_O_accumulated_.block<3,3>(0,0));
+
+    Eigen::Quaternionf quat = Eigen::Quaternionf(
+                    T_O_accumulated_.block<3,3>(0,0));
     quat.normalize();
-    T_O = Transformation(quat, T_O_accumulated_.block<3,1>(0,3));
+    T_ACC = Transformation(quat, T_O_accumulated_.block<3,1>(0,3));
+
     convertPointcloud(*cloud_transformed_, color_map_, &points, &colors);
+
+    integrator_->integratePointCloud(Transformation(), points, colors,
+                                                        false, T_ACC * T_G_C);
   }
-
-  integrator_->integratePointCloud(T_G_C, points, colors, false, T_O);
-
 }
 
-void DynamicObject::align(){
+int DynamicObject::align(const Transformation& T_G_C){
 
-  if (!occured_in_current_frame_) return;
-
-  Eigen::Matrix4f T_O = Eigen::Matrix4f::Identity();
+  not_aligned_ = false;
+  if (!active_) return -1;
+  if (!occured_in_current_frame_) return -1;
+  mesh_cloud_->clear();
 
   Mesh connected_mesh;
   mesh_layer_->getConnectedMesh(&connected_mesh);
 
+  pcl::transformPointCloud (
+   *cloud_current_, *cloud_current_transformed_,
+                      T_G_C.getTransformationMatrix());
+
   if (!(cloud_current_->empty() ||
         cloud_last_->empty() ||
         connected_mesh.vertices.empty()))
-  { //TODO CLEAN up intendation with visual studio code
-
-    // std::cout<<"Align Object "<<id_<<std::endl;
+  {
 
     for (size_t idx = 0;  idx <  connected_mesh.vertices.size(); idx++){
       pcl::PointXYZRGBNormal point;
@@ -150,140 +241,113 @@ void DynamicObject::align(){
       point.normal_z = connected_mesh.normals[idx](2,0);
       mesh_cloud_->push_back(point);
     }
-    pcl::StopWatch test;
 
+    pcl::Indices indices;
+    pcl::removeNaNFromPointCloud(*mesh_cloud_, *mesh_cloud_, indices);
+
+    Eigen::Matrix4f T_O = Eigen::Matrix4f::Identity();
     double fitness_score;
-    // std::cout<<"Align Object "<<id_<<" "<<semantic_class_<<std::endl;
-    // std::cout << cloud_current_->points.size() <<std::endl;
-    // std::cout << cloud_last_->points.size() <<std::endl;
-    // std::cout << mesh_cloud_->points.size() <<std::endl;
-    // std::cout << T_O_accumulated_ << std::endl;
-    bool SuccessFirst = icp_->align(cloud_current_, cloud_last_,
+    bool s1 = icp_->align(cloud_current_transformed_, cloud_last_transformed_,
                                T_O_last_.cast<float>(), &T_O, &fitness_score);
 
-    // std::cout <<"Fitness first "<< fitness_score <<std::endl;
-
-    if (!SuccessFirst){
-      std::cout<<"Align Object "<<id_<<" NOT CONVERGED 1"<<std::endl;
+    if (T_O.block<3,1>(0,3).norm() < 0.0001){
+      T_O_accumulated_ = Eigen::Matrix4f::Identity();
+      static_ = true;
+      frames_not_aligned_ = 0;
     }
 
-     if (fitness_score > 0.01){ //TODO Do this correctly
-       std::cout<<"LOW FITNESS"<<std::endl;
-       T_O = T_O_last_;
-     } else{
-       T_O_last_ = T_O;
-     }
-    //T_O_last_ =  T_O;
+    if (!static_){
 
-    Eigen::Matrix4f PRODUCT = T_O_accumulated_ * T_O;
+       if (!s1){
 
-    Eigen::Matrix4f T_TEST = Eigen::Matrix4f::Identity();
-    bool SuccessSecond = icp_->align(cloud_current_, mesh_cloud_,
-                               PRODUCT.cast<float>(), &T_TEST, &fitness_score);
+         not_aligned_=true;
+         T_O = T_O_last_;
+       } else {
+         T_O_last_ = T_O;
+       }
 
-    if (!SuccessSecond){
-      std::cout<<"Align Object "<<id_<<" NOT CONVERGED 2"<<std::endl;
+      Eigen::Matrix4f T_O_accumulated_est = T_O_accumulated_ * T_O;
+      Eigen::Matrix4f T_O_accumulated_new = Eigen::Matrix4f::Identity();
+
+      bool s2 = icp_->align(cloud_current_transformed_, mesh_cloud_,
+                               T_O_accumulated_est.cast<float>(),
+                                    &T_O_accumulated_new, &fitness_score);
+
+      if (!s2){
+          T_O_accumulated_ = T_O_accumulated_est;
+      } else {
+          T_O_accumulated_ = T_O_accumulated_new;
+      }
+
+      if (!s2){
+        frames_not_aligned_++;
+      } else {
+        frames_not_aligned_=0;
+      }
+
     }
-
-    // std::cout <<"Current Translate "<<id_<<" "<< T_O.block<3,1>(0,3).norm() <<std::endl;
-    // std::cout <<"Last Translate "<<id_<<" "<< T_O_last_.block<3,1>(0,3).norm() <<std::endl;
-    // std::cout <<"Last Translate "<<id_<<" "<< T_TEST.block<3,1>(0,3).norm() <<std::endl;
-
-    // std::cout <<"Fitness second "<< fitness_score <<std::endl;
-
-    if (fitness_score > 0.01){
-      std::cout<<"LOW FITNESS"<<std::endl;
-      T_O_accumulated_ = T_O_accumulated_ * T_O;
-    } else{
-      T_O_accumulated_ = T_TEST;
-    }
-
-
-    // std::cout << "icp took  " << std::fixed << test.getTimeSeconds()
-    //                                                 << " seconds." << std::endl;
   }
 
-  pcl::transformPointCloud (*cloud_current_, *cloud_transformed_, T_O_accumulated_);
+  pcl::transformPointCloud (
+            *cloud_current_transformed_, *cloud_transformed_, T_O_accumulated_);
+
+  return frames_not_aligned_;
 
 }
 
-// void DynamicObject::align2(){
-//
-//   if (!occured_in_current_frame_) return;
-//
-//   Eigen::Matrix4f T_O = Eigen::Matrix4f::Identity();
-//
-//   Mesh connected_mesh;
-//   mesh_layer_->getConnectedMesh(&connected_mesh);
-//
-//   if (!(cloud_current_->empty() ||
-//         cloud_last_->empty() ||
-//         connected_mesh.vertices.empty()))
-//   { //TODO CLEAN up intendation with visual studio code
-//
-//     // std::cout<<"Align Object "<<id_<<std::endl;
-//
-//     for (size_t idx = 0;  idx <  connected_mesh.vertices.size(); idx++){
-//       pcl::PointXYZRGBNormal point;
-//       point.x = connected_mesh.vertices[idx](0,0);
-//       point.y = connected_mesh.vertices[idx](1,0);
-//       point.z = connected_mesh.vertices[idx](2,0);
-//       point.normal_x = connected_mesh.normals[idx](0,0);
-//       point.normal_y = connected_mesh.normals[idx](1,0);
-//       point.normal_z = connected_mesh.normals[idx](2,0);
-//       mesh_cloud_->push_back(point);
-//     }
-//     pcl::StopWatch test;
-//
-//     // Calculate object centroid
-//     float c_x = 0;
-//     float c_y = 0;
-//     float c_z = 0;
-//     for (size_t idx = 0u;  idx < (*cloud_current_).size(); ++idx)
-//     {
-//
-//       c_x += cloud_current_->points[idx].x;
-//       c_y += cloud_current_->points[idx].y;
-//       c_z += cloud_current_->points[idx].z;
-//
-//     }
-//     c_x /= (*cloud_current_).size();
-//     c_y /= (*cloud_current_).size();
-//     c_z /= (*cloud_current_).size();
-//
-//
-//     Eigen::Matrix4f T_O_0 = Eigen::Matrix4f::Identity();
-//     T_O_0(0,3) = - c_x;
-//     T_O_0(1,3) = - c_y;
-//     T_O_0(2,3) = - c_z;
-//
-//     // Shift object to zero
-//     pcl::transformPointCloud (*cloud_current_, *cloud_transformed_, T_O_0);
-//
-//
-//     double fitness_score;
-//     bool SuccessFirst = icp_->align(cloud_transformed_, mesh_cloud_,
-//                             Eigen::Matrix4f::Identity(), &T_O, &fitness_score);
-//
-//
-//     T_O_accumulated_ =  T_O_0 * T_O;
-//
-//   }
-//
-//   pcl::transformPointCloud (*cloud_current_, *cloud_transformed_, T_O_accumulated_);
-//
-// }
 
-void DynamicObject::updateState(const Transformation& T_G_C){
+bool DynamicObject::isPointInside(const InputPointType point){
 
-  Eigen::Matrix4f result_transform = T_G_C.getTransformationMatrix()
-                                                  * T_O_accumulated_.inverse();
+  return (point.x > p_mesh_min_.x - xy_in_object_padding_ &&
+          point.y > p_mesh_min_.y - xy_in_object_padding_ &&
+          point.z > p_mesh_min_.z - xy_in_object_padding_&&
+          point.x < p_mesh_max_.x + xy_in_object_padding_ &&
+          point.y < p_mesh_max_.y + xy_in_object_padding_ &&
+          point.z < p_mesh_max_.z + xy_in_object_padding_ );
+}
 
-  state_ = getOBBDetection(getMeshCloud(), result_transform);
+void DynamicObject::updateMeshMinMax(){
+
+
+
+  pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr transformed_cloud(
+                                  new pcl::PointCloud<pcl::PointXYZRGBNormal>());
+  pcl::transformPointCloud (
+        *cloud_current_, *transformed_cloud, Eigen::Matrix4f::Identity());
+  pcl::getMinMax3D(*transformed_cloud, p_mesh_min_, p_mesh_max_);
+
+}
+
+void DynamicObject::updateState(
+  const Transformation& T_G_C,
+            const sensor_msgs::PointCloud2::Ptr& pointcloud_msg){
+
+  Eigen::Matrix4f result_transform;
+  if (!active_){
+    result_transform = T_G_C.getTransformationMatrix();
+    state_ = getOBBDetection(cloud_current_, result_transform);
+  } else {
+    result_transform = T_O_accumulated_.inverse();
+    state_ = getOBBDetection(mesh_cloud_, result_transform);
+  }
+
+  geometry_msgs::PoseStamped obj_pose;
+  obj_pose.header.stamp = pointcloud_msg->header.stamp;
+  obj_pose.pose.position.x = state_(0);
+  obj_pose.pose.position.y = state_(1);
+  obj_pose.pose.position.z = state_(2);
+  obj_pose.pose.orientation.x = 0;
+  obj_pose.pose.orientation.y = 0;
+  obj_pose.pose.orientation.z = std::sin(state_(3)/2.0);
+  obj_pose.pose.orientation.w = std::cos(state_(3)/2.0);
+
+  stamped_trajectory_.push_back(obj_pose);
 
 }
 
 void DynamicObject::generateMesh(){
+
+  if (!active_) return;
 
   mesh_integrator_->generateMesh(true, true);
 
@@ -297,73 +361,6 @@ void DynamicObject::generateMesh(){
       mesh->colors[i] = mesh_color_;
     }
   }
-
-
 }
-
-void DynamicObject::updatePosition(const Transformation& T_G_C){
-
-    Eigen::Matrix4f tfmatrix = T_G_C.getTransformationMatrix();
-    pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr obj_cloud_temp;
-    obj_cloud_temp.reset(new pcl::PointCloud<pcl::PointXYZRGBNormal>);
-    pcl::transformPointCloud (*cloud_current_,
-                        *obj_cloud_temp,
-                        tfmatrix);
-
-    // Almost same as used in Lidar MODT
-    pcl::PointXYZRGBNormal origMinPoint, origMaxPoint;
-    pcl::getMinMax3D(*obj_cloud_temp, origMinPoint, origMaxPoint);
-
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cluster_cloud_transformed(
-                                            new pcl::PointCloud<pcl::PointXYZ>);
-    for (size_t idx = 0u;  idx < (*obj_cloud_temp).size(); ++idx)
-    {
-      pcl::PointXYZ point;
-
-      float x = obj_cloud_temp->points[idx].x;
-      float y = obj_cloud_temp->points[idx].y;
-
-      point.x = x;
-      point.y = y;
-      point.z = 0.0;
-
-      cluster_cloud_transformed->points.push_back(point);
-    }
-
-      // Compute principal directions
-    Eigen::Vector4f pcaCentroid;
-    pcl::compute3DCentroid(*cluster_cloud_transformed, pcaCentroid);
-    Eigen::Matrix3f covariance;
-    computeCovarianceMatrixNormalized(
-                           *cluster_cloud_transformed, pcaCentroid, covariance);
-    Eigen::Matrix2f smallcovariance = covariance.block(0,0,2,2);
-    Eigen::SelfAdjointEigenSolver<Eigen::Matrix2f> eigen_solver(
-                                   smallcovariance, Eigen::ComputeEigenvectors);
-    Eigen::Matrix2f eigenVectorsPCA = eigen_solver.eigenvectors();
-
-    // Transform the original cloud to the origin where the principal
-    // components correspond to the axes.
-    Eigen::Matrix4f projectionTransform(Eigen::Matrix4f::Identity());
-    projectionTransform.block<2,2>(0,0) = eigenVectorsPCA.transpose();
-    projectionTransform.block<2,1>(0,3) = -1.f *
-                  (projectionTransform.block<2,2>(0,0) * pcaCentroid.head<2>());
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cloudPointsProjected(
-                                            new pcl::PointCloud<pcl::PointXYZ>);
-    pcl::transformPointCloud(
-        *cluster_cloud_transformed, *cloudPointsProjected, projectionTransform);
-    // Get the minimum and maximum points of the transformed cloud.
-    pcl::PointXYZ minPoint, maxPoint;
-    pcl::getMinMax3D(*cloudPointsProjected, minPoint, maxPoint);
-    const Eigen::Vector2f meanXY = 0.5f * (maxPoint.getVector3fMap().head<2>() +
-                                           minPoint.getVector3fMap().head<2>());
-    const float meanZ = 0.5f * (origMaxPoint.z + origMinPoint.z);
-
-    Eigen::Vector2f bboxTransform = eigenVectorsPCA * meanXY +
-                                                          pcaCentroid.head<2>();
-    Point position(bboxTransform[0], bboxTransform[1] , meanZ);
-
-    trajectory_.push_back(position);
-}
-
 
 }  // namespace voxblox
