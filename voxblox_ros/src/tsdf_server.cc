@@ -352,9 +352,9 @@ bool TsdfServer::getNextPointcloudFromQueue(
 
 void TsdfServer::insertPointcloud(
     const sensor_msgs::PointCloud2::Ptr& pointcloud_msg_in) {
-  if (pointcloud_msg_in->header.stamp - last_msg_time_ptcloud_ >
+  if (pointcloud_msg_in->header.stamp - last_msg_time_ptcloud_[pointcloud_msg_in->header.frame_id] >
       min_time_between_msgs_) {
-    last_msg_time_ptcloud_ = pointcloud_msg_in->header.stamp;
+    last_msg_time_ptcloud_[pointcloud_msg_in->header.frame_id] = pointcloud_msg_in->header.stamp;
     // So we have to process the queue anyway... Push this back.
     pointcloud_queue_.push(pointcloud_msg_in);
   }

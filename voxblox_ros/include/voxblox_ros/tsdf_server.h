@@ -254,7 +254,7 @@ class TsdfServer {
   std::queue<sensor_msgs::PointCloud2::Ptr> freespace_pointcloud_queue_;
 
   // Last message times for throttling input.
-  ros::Time last_msg_time_ptcloud_;
+  std::unordered_map<std::string, ros::Time> last_msg_time_ptcloud_;
   ros::Time last_msg_time_freespace_ptcloud_;
 
   /// Current transform corrections from ICP.
