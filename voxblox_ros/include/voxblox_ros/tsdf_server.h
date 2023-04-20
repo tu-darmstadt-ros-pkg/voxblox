@@ -137,6 +137,7 @@ class TsdfServer {
 
   /// Publish markers for visualization.
   ros::Publisher mesh_pub_;
+  ros::Publisher full_mesh_pub_;
   ros::Publisher tsdf_pointcloud_pub_;
   ros::Publisher surface_pointcloud_pub_;
   ros::Publisher tsdf_slice_pub_;

@@ -60,6 +60,7 @@ TsdfServer::TsdfServer(const ros::NodeHandle& nh,
                                   &TsdfServer::insertPointcloud, this);
 
   mesh_pub_ = nh_private_.advertise<voxblox_msgs::Mesh>("mesh", 1, true);
+  full_mesh_pub_ = nh_private_.advertise<voxblox_msgs::Mesh>("full_mesh", 1, true);
 
   // Publishing/subscribing to a layer from another node (when using this as
   // a library, for example within a planner).
@@ -540,6 +541,7 @@ bool TsdfServer::generateMesh() {
   generateVoxbloxMeshMsg(mesh_layer_, color_mode_, &mesh_msg);
   mesh_msg.header.frame_id = world_frame_;
   mesh_pub_.publish(mesh_msg);
+  full_mesh_pub_.publish(mesh_msg);
 
   publish_mesh_timer.Stop();
 
