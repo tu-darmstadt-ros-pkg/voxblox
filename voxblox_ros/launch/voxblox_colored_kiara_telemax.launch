@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<launch> 
+  
+  <arg name="filename_mesh" default="colored_mesh" doc="filename (not path, no ending) for saving mesh, best it contains a timestamp"/> 
+  
+  <node name="tsdf_server" pkg="voxblox_ros" type="tsdf_server" respawn="true" output="screen">
+    <param name="world_frame" value="world"/>
+    <param name="publish_tsdf_map" value="false"/>
+    <param name="update_mesh_every_n_sec" value="1.0" />
+    
+    <param name="publish_tsdf_info" value="false" />
+    <param name="min_time_between_msgs_sec" value="0.0" />
+    <param name="verbose" value="false" />
+    <param name="color_mode" value="color" /> <!-- normals, color -->
+    <param name="method" value="fast" /> <!-- simple, fast, merged -->
+    <param name="use_const_weight" value="true" />
+    
+    <param name="tsdf_voxel_size" value="0.05" /> <!-- was 0.025 -->
+    <param name="tsdf_voxels_per_side" value="16" />
+    <param name="voxel_carving_enabled" value="false" />
+    <param name="truncation_distance" value="0.4" />
+    
+    <param name="publish_slices" value="false" />
+    
+    <param name="mesh_filename" value="$(find voxblox_ros)/mesh_results/$(arg filename_mesh).ply" />
+
+    <remap from="pointcloud" to="/colored_cloud_semantic_filtered"/>
+<!--     <remap from="pointcloud" to="/scan_cloud_filtered"/> -->
+  </node>
+</launch>
