@@ -25,6 +25,7 @@
 #include <voxblox/utils/color_maps.h>
 #include <voxblox_msgs/FilePath.h>
 #include <voxblox_msgs/Mesh.h>
+#include <voxblox_msgs/AddPlane.h>
 
 #include "voxblox_ros/mesh_vis.h"
 #include "voxblox_ros/ptcloud_vis.h"
@@ -63,6 +64,8 @@ class TsdfServer {
     // Do nothing.
   }
 
+  bool addGroundPlane(FloatingPoint min_x, FloatingPoint max_x, FloatingPoint min_y, FloatingPoint max_y, FloatingPoint z_height, const std::string& frame_id);
+
   void publishAllUpdatedTsdfVoxels();
   void publishTsdfSurfacePoints();
   void publishTsdfOccupiedNodes();
@@ -92,6 +95,8 @@ class TsdfServer {
       std_srvs::Empty::Response& response);                          // NOLINT
   bool publishTsdfMapCallback(std_srvs::Empty::Request& request,     // NOLINT
                               std_srvs::Empty::Response& response);  // NOLINT
+  bool addGroundPlaneCallback(voxblox_msgs::AddPlane::Request& request,
+                              voxblox_msgs::AddPlane::Response& response);
 
   void updateMeshEvent(const ros::TimerEvent& event);
   void publishMapEvent(const ros::TimerEvent& event);
@@ -157,6 +162,7 @@ class TsdfServer {
   ros::ServiceServer load_map_srv_;
   ros::ServiceServer publish_pointclouds_srv_;
   ros::ServiceServer publish_tsdf_map_srv_;
+  ros::ServiceServer add_ground_plane_srv_;
 
   /// Tools for broadcasting TFs.
   tf::TransformBroadcaster tf_broadcaster_;

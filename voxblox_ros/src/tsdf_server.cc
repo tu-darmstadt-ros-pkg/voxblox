@@ -126,6 +126,8 @@ TsdfServer::TsdfServer(const ros::NodeHandle& nh,
       "publish_pointclouds", &TsdfServer::publishPointcloudsCallback, this);
   publish_tsdf_map_srv_ = nh_private_.advertiseService(
       "publish_map", &TsdfServer::publishTsdfMapCallback, this);
+  add_ground_plane_srv_ = nh_private_.advertiseService(
+      "add_ground_plane", &TsdfServer::addGroundPlaneCallback, this);
 
   // If set, use a timer to progressively integrate the mesh.
   double update_mesh_every_n_sec = 1.0;
@@ -652,6 +654,56 @@ void TsdfServer::tsdfMapCallback(const voxblox_msgs::Layer& layer_msg) {
       publishPointclouds();
     }
   }
+}
+
+bool TsdfServer::addGroundPlane(FloatingPoint min_x, FloatingPoint max_x, FloatingPoint min_y, FloatingPoint max_y, FloatingPoint z_height, const std::string& frame_id) {
+  ROS_INFO_STREAM("Adding ground plane.");
+
+  // Look up transform to frame
+  Transformation T_G_C;
+  if (!transformer_.lookupTransform(frame_id,
+                                   world_frame_,
+                                   ros::Time(0), &T_G_C)) {
+    ROS_ERROR_STREAM("Failed to find transform from " << world_frame_ << " to " << frame_id << ". Can not add ground plane.");
+    return false;
+  }
+
+  // Compute plane normal
+  voxblox::Point a = T_G_C * voxblox::Point(min_x, min_y, z_height);
+  voxblox::Point b = T_G_C * voxblox::Point(min_x, max_y, z_height);
+  voxblox::Point c = T_G_C * voxblox::Point(max_x, min_y, z_height);
+  voxblox::Point n = (c - a).cross(b - a).normalized();
+  FloatingPoint d = n.dot(a);
+
+  // Iterate through voxels around plane
+  float voxel_size = tsdf_map_->getTsdfLayerPtr()->voxel_size();
+  for (FloatingPoint x = min_x; x < max_x; x += voxel_size) {
+    for (FloatingPoint y = min_y; y < max_y; y += voxel_size) {
+      for (FloatingPoint z = z_height - tsdf_integrator_->getConfig().default_truncation_distance; z < z_height + tsdf_integrator_->getConfig().default_truncation_distance; z += voxel_size) {
+        voxblox::Point point(x, y, z);
+        voxblox::Point point_transformed = T_G_C * point;
+        voxblox::Layer<voxblox::TsdfVoxel>::BlockType::Ptr block_ptr = tsdf_map_->getTsdfLayerPtr()->allocateBlockPtrByCoordinates(point_transformed);
+        size_t linear_index = block_ptr->computeLinearIndexFromCoordinates(point_transformed);
+        voxblox::TsdfVoxel& voxel = block_ptr->getVoxelByLinearIndex(linear_index);
+        Point voxel_center = block_ptr->computeCoordinatesFromLinearIndex(linear_index);
+
+        if (voxel.weight == 0.0) {
+          voxel.distance = n.dot(voxel_center) - d;
+          voxel.weight = 1.0;
+          block_ptr->set_updated(true);
+        }
+      }
+    }
+  }
+
+  return true;
+}
+
+bool TsdfServer::addGroundPlaneCallback(
+    voxblox_msgs::AddPlane::Request& request,
+    voxblox_msgs::AddPlane::Response& response) {
+  response.success = addGroundPlane(request.min_x, request.max_x, request.min_y, request.max_y, request.z, request.header.frame_id);
+  return true;
 }
 
 }  // namespace voxblox
