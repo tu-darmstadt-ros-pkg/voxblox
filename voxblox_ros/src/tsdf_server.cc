@@ -659,6 +659,9 @@ void TsdfServer::tsdfMapCallback(const voxblox_msgs::Layer& layer_msg) {
 bool TsdfServer::addGroundPlane(FloatingPoint min_x, FloatingPoint max_x, FloatingPoint min_y, FloatingPoint max_y, FloatingPoint z_height, const std::string& frame_id) {
   ROS_INFO_STREAM("Adding ground plane.");
 
+  // Wait for the robot to settle.
+  ros::Duration(1.0).sleep();
+
   // Look up transform to frame
   Transformation T_G_C;
   if (!transformer_.lookupTransform(frame_id,
