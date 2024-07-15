@@ -18,16 +18,18 @@ class VoxbloxMeshDisplay
  public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
   VoxbloxMeshDisplay();
-  virtual ~VoxbloxMeshDisplay();
+  ~VoxbloxMeshDisplay() override;
+  void update(float wall_dt, float ros_dt) override;
 
  protected:
-  virtual void onInitialize();
+  void onInitialize() override;
 
-  virtual void reset();
+  void reset() override;
 
  private:
-  void processMessage(const voxblox_msgs::Mesh::ConstPtr& msg);
+  void processMessage(const voxblox_msgs::Mesh::ConstPtr& msg) override;
 
+  voxblox_msgs::Mesh::ConstPtr new_msg_;
   std::unique_ptr<VoxbloxMeshVisual> visual_;
 };
 
